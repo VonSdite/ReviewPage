@@ -1,0 +1,48 @@
+server:
+  host: 0.0.0.0
+  port: 8091
+
+database:
+  path: var/review_page.sqlite3
+
+logging:
+  path: var/logs
+  level: INFO
+
+workspace:
+  temp_root: var/tmp/reviews
+
+queue:
+  poll_interval_seconds: 2
+
+plugins:
+  modules: []
+
+hubs:
+  default: gitlab
+  gitlab:
+    enabled: true
+    display_name: GitLab Merge Request
+    web_base_url: https://gitlab.example.com
+    api_base_url: https://gitlab.example.com/api/v4
+    private_token:
+    clone_url_preference: http
+    verify_ssl: true
+    timeout_seconds: 20
+
+agents:
+  default: opencode
+  opencode:
+    enabled: true
+    display_name: OpenCode
+    binary: opencode
+    list_models_command:
+      - models
+    review_command:
+      - run
+      - --model
+      - "{model}"
+      - "{prompt}"
+    prompt_template: /review {review_url}
+    model_list: []
+    extra_env: {}

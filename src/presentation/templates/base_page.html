@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% include "_theme_bootstrap.html" %}
+    <title>{% block page_title %}MR 检视中心{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/review-base.css?v=20260320-1">
+    {% block page_css %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    {% block body %}{% endblock %}
+    <script src="/static/js/theme.js?v=20260320-1"></script>
+    {% block page_scripts %}{% endblock %}
+</body>
+</html>
