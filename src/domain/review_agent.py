@@ -11,7 +11,6 @@ from .review_models import AgentModelCatalog, ReviewCommandSpec
 
 class ReviewAgent(ABC):
     agent_id: str
-    display_name: str
 
     @abstractmethod
     def get_model_catalog(self) -> AgentModelCatalog:
@@ -25,7 +24,7 @@ class ReviewAgent(ABC):
         catalog = self.get_model_catalog()
         return {
             "id": self.agent_id,
-            "name": self.display_name,
+            "name": self.agent_id,
             "models": [item.to_dict() for item in catalog.models],
             "model_source": catalog.source,
             "model_error": catalog.error,

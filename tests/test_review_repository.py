@@ -18,9 +18,7 @@ class ReviewRepositoryTestCase(unittest.TestCase):
             created = repository.create_review(
                 mr_url="https://gitlab.example.com/group/project/-/merge_requests/3",
                 hub_id="gitlab",
-                hub_name="GitLab Merge Request",
                 agent_id="opencode",
-                agent_name="OpenCode",
                 model_id="provider/model-a",
             )
             self.assertEqual(created["status"], "pending")
@@ -67,9 +65,7 @@ class ReviewRepositoryTestCase(unittest.TestCase):
                 repository.create_review(
                     mr_url=f"https://gitlab.example.com/group/project/-/merge_requests/{index + 1}",
                     hub_id="gitlab",
-                    hub_name="GitLab Merge Request",
                     agent_id="opencode",
-                    agent_name="OpenCode",
                     model_id=f"provider/model-{index + 1}",
                 )
 

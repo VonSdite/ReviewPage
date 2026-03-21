@@ -27,9 +27,7 @@ class ReviewRepository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     mr_url TEXT NOT NULL,
                     hub_id TEXT NOT NULL,
-                    hub_name TEXT NOT NULL,
                     agent_id TEXT NOT NULL,
-                    agent_name TEXT NOT NULL,
                     model_id TEXT NOT NULL,
                     status TEXT NOT NULL,
                     runtime_state TEXT NOT NULL,
@@ -92,9 +90,7 @@ class ReviewRepository:
         *,
         mr_url: str,
         hub_id: str,
-        hub_name: str,
         agent_id: str,
-        agent_name: str,
         model_id: str,
     ) -> dict[str, Any]:
         now = _utc_now()
@@ -104,17 +100,15 @@ class ReviewRepository:
                 INSERT INTO review_records (
                     mr_url,
                     hub_id,
-                    hub_name,
                     agent_id,
-                    agent_name,
                     model_id,
                     status,
                     runtime_state,
                     created_at,
                     updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 'queued', ?, ?)
+                ) VALUES (?, ?, ?, ?, 'pending', 'queued', ?, ?)
                 """,
-                (mr_url, hub_id, hub_name, agent_id, agent_name, model_id, now, now),
+                (mr_url, hub_id, agent_id, model_id, now, now),
             )
             review_id = int(cursor.lastrowid)
             row = conn.execute(

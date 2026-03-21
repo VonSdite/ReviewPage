@@ -19,7 +19,6 @@ class OpencodeReviewAgent(ReviewAgent):
         self._ctx = ctx
         self._logger = ctx.logger
         self._config = ctx.config_manager.get_agent_config(self.agent_id)
-        self.display_name = str(self._config.get("display_name") or "OpenCode")
         self._binary = str(self._config.get("binary") or "opencode")
         self._list_models_command = [str(item) for item in (self._config.get("list_models_command") or ["models"])]
         self._review_command = [str(item) for item in (self._config.get("review_command") or ["run", "--model", "{model}", "{prompt}"])]

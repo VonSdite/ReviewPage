@@ -11,7 +11,6 @@ from .review_models import MergeRequestTarget
 
 class ReviewHub(ABC):
     hub_id: str
-    display_name: str
 
     @abstractmethod
     def supports_url(self, review_url: str) -> bool:
@@ -24,5 +23,5 @@ class ReviewHub(ABC):
     def to_metadata(self) -> dict[str, str]:
         return {
             "id": self.hub_id,
-            "name": self.display_name,
+            "name": self.hub_id,
         }

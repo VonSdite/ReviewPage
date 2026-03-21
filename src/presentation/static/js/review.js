@@ -325,10 +325,10 @@
                             <a class="record-link" href="${escapeHtml(record.mr_url)}" target="_blank" rel="noreferrer">${escapeHtml(record.mr_url)}</a>
                         </div>
                     </td>
-                    <td>${escapeHtml(record.hub_name || record.hub_id)}</td>
+                    <td>${escapeHtml(record.hub_id)}</td>
                     <td>
                         <div class="record-meta">
-                            <div class="record-title">${escapeHtml(record.agent_name || record.agent_id)}</div>
+                            <div class="record-title">${escapeHtml(record.agent_id)}</div>
                             <div class="record-subtitle">${escapeHtml(record.model_id)}</div>
                         </div>
                     </td>
@@ -381,8 +381,8 @@
         elements.detailQueuePosition.textContent = detail.queue_position ? `第 ${detail.queue_position} 位` : '-';
         elements.detailMrUrl.textContent = detail.mr_url || '-';
         elements.detailMrUrl.href = detail.mr_url || '#';
-        elements.detailHub.textContent = detail.hub_name || detail.hub_id || '-';
-        elements.detailAgent.textContent = detail.agent_name || detail.agent_id || '-';
+        elements.detailHub.textContent = detail.hub_id || '-';
+        elements.detailAgent.textContent = detail.agent_id || '-';
         elements.detailModel.textContent = detail.model_id || '-';
         elements.detailSourceBranch.textContent = detail.source_branch || '-';
         elements.detailTargetBranch.textContent = detail.target_branch || '-';

@@ -22,7 +22,6 @@ hubs:
   default: gitlab
   gitlab:
     enabled: true
-    display_name: GitLab Merge Request
     web_base_url: https://gitlab.example.com
     api_base_url: https://gitlab.example.com/api/v4
     private_token:
@@ -34,7 +33,6 @@ agents:
   default: opencode
   opencode:
     enabled: true
-    display_name: OpenCode
     binary: opencode
     list_models_command:
       - models

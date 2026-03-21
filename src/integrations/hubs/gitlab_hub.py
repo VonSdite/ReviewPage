@@ -22,7 +22,6 @@ class GitLabReviewHub(ReviewHub):
         self._ctx = ctx
         self._logger = ctx.logger
         self._config = ctx.config_manager.get_hub_config(self.hub_id)
-        self.display_name = str(self._config.get("display_name") or "GitLab Merge Request")
         self._web_base_url = str(self._config.get("web_base_url") or "").rstrip("/")
         self._api_base_url = str(self._config.get("api_base_url") or "").rstrip("/")
         self._private_token = str(self._config.get("private_token") or "").strip()

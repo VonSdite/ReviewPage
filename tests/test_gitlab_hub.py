@@ -13,7 +13,6 @@ class _FakeConfigManager:
     def get_hub_config(self, hub_id):
         self._last_hub_id = hub_id
         return {
-            "display_name": "GitLab Merge Request",
             "web_base_url": "https://gitlab.example.com",
             "api_base_url": "https://gitlab.example.com/api/v4",
             "private_token": "secret-token",

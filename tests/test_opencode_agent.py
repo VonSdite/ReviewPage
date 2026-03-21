@@ -13,7 +13,6 @@ class _FakeConfigManager:
     def get_agent_config(self, agent_id):
         self._last_agent_id = agent_id
         return {
-            "display_name": "OpenCode",
             "binary": "opencode",
             "list_models_command": ["models"],
             "review_command": ["run", "--model", "{model}", "{prompt}"],

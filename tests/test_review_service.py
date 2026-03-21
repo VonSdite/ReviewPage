@@ -35,7 +35,6 @@ class _FakeCtx:
 
 class _FakeAgent:
     agent_id = "opencode"
-    display_name = "OpenCode"
 
     def get_model_catalog(self):
         return AgentModelCatalog(models=[ModelChoice(model_id="provider/model-a")], source="test")
@@ -46,7 +45,7 @@ class _FakeAgent:
     def to_metadata(self):
         return {
             "id": self.agent_id,
-            "name": self.display_name,
+            "name": self.agent_id,
             "models": [{"id": "provider/model-a", "label": "provider/model-a"}],
             "model_source": "test",
             "model_error": None,
@@ -55,7 +54,6 @@ class _FakeAgent:
 
 class _FakeHub:
     hub_id = "gitlab"
-    display_name = "GitLab Merge Request"
 
     def supports_url(self, review_url):
         return review_url.startswith("https://gitlab.example.com/")
@@ -64,7 +62,7 @@ class _FakeHub:
         raise NotImplementedError
 
     def to_metadata(self):
-        return {"id": self.hub_id, "name": self.display_name}
+        return {"id": self.hub_id, "name": self.hub_id}
 
 
 class _ResolvableFakeHub(_FakeHub):

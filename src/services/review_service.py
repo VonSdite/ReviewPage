@@ -66,9 +66,7 @@ class ReviewService:
         row = self._review_repository.create_review(
             mr_url=mr_url,
             hub_id=hub_id,
-            hub_name=hub.display_name,
             agent_id=agent_id,
-            agent_name=agent.display_name,
             model_id=model_id,
         )
         queue_positions = self._review_repository.get_queue_positions()
@@ -239,9 +237,7 @@ class ReviewService:
             "id": record_id,
             "mr_url": row.get("mr_url"),
             "hub_id": row.get("hub_id"),
-            "hub_name": row.get("hub_name"),
             "agent_id": row.get("agent_id"),
-            "agent_name": row.get("agent_name"),
             "model_id": row.get("model_id"),
             "status": status,
             "runtime_state": runtime_state,
