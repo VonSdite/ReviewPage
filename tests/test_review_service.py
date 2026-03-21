@@ -79,6 +79,41 @@ class _ResolvableFakeHub(_FakeHub):
 
 
 class ReviewServiceTestCase(unittest.TestCase):
+    def test_list_reviews_returns_pagination_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repository = ReviewRepository(create_connection_factory(Path(tmpdir) / "review.db"))
+            service = ReviewService(
+                _FakeCtx(),
+                review_repository=repository,
+                agents={"opencode": _FakeAgent()},
+                hubs={"gitlab": _FakeHub()},
+            )
+
+            for index in range(5):
+                service.create_review(
+                    {
+                        "mr_url": f"https://gitlab.example.com/group/project/-/merge_requests/{index + 1}",
+                        "hub_id": "gitlab",
+                        "agent_id": "opencode",
+                        "model_id": "provider/model-a",
+                    }
+                )
+
+            second_page = service.list_reviews(page=2, page_size=2)
+            overflow_page = service.list_reviews(page=9, page_size=2)
+
+        self.assertEqual(second_page["pagination"]["page"], 2)
+        self.assertEqual(second_page["pagination"]["page_size"], 2)
+        self.assertEqual(second_page["pagination"]["total"], 5)
+        self.assertEqual(second_page["pagination"]["total_pages"], 3)
+        self.assertTrue(second_page["pagination"]["has_prev"])
+        self.assertTrue(second_page["pagination"]["has_next"])
+        self.assertEqual(len(second_page["records"]), 2)
+
+        self.assertEqual(overflow_page["pagination"]["page"], 3)
+        self.assertFalse(overflow_page["pagination"]["has_next"])
+        self.assertEqual(len(overflow_page["records"]), 1)
+
     def test_retry_review_creates_new_pending_record(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = ReviewRepository(create_connection_factory(Path(tmpdir) / "review.db"))

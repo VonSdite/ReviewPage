@@ -1,100 +1,67 @@
 {% extends "base_page.html" %}
 
 {% block page_title %}MR 代码检视中心{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260320-2">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260321-8">{% endblock %}
 {% block body_class %}review-page{% endblock %}
 
 {% block body %}
 <div class="page-shell">
     <div class="page-frame">
-        <header class="hero-card">
-            <div class="hero-copy">
-                <span class="hero-kicker">Review Queue Plugin</span>
-                <h1>MR 代码检视中心</h1>
-                <p>输入 Merge Request 地址，选择 Agent 与模型，后台将按队列串行执行检视，并完整保存结果与命令行日志。</p>
-            </div>
-            <div class="hero-actions">
-                <div class="hero-pill" id="workerHint">后台串行执行中</div>
-                <button type="button" class="theme-toggle" id="themeToggle" aria-label="切换主题" title="切换主题">
-                    <svg class="theme-icon-sun" viewBox="0 0 24 24" stroke-width="1.8">
-                        <circle cx="12" cy="12" r="4"></circle>
-                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M19.07 4.93l-2.12 2.12M7.05 16.95l-2.12 2.12"></path>
-                    </svg>
-                    <svg class="theme-icon-moon" viewBox="0 0 24 24" stroke-width="1.8">
-                        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8z"></path>
-                    </svg>
-                </button>
-            </div>
+        <header class="page-topbar">
+            <h1>MR 检视</h1>
+            <button type="button" class="theme-toggle" id="themeToggle" aria-label="切换主题" title="切换主题">
+                <svg class="theme-icon-sun" viewBox="0 0 24 24" stroke-width="1.8">
+                    <circle cx="12" cy="12" r="4"></circle>
+                    <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M19.07 4.93l-2.12 2.12M7.05 16.95l-2.12 2.12"></path>
+                </svg>
+                <svg class="theme-icon-moon" viewBox="0 0 24 24" stroke-width="1.8">
+                    <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8z"></path>
+                </svg>
+            </button>
         </header>
-
-        <section class="stats-grid" aria-label="任务统计">
-            <article class="metric-card">
-                <span class="metric-label">全部任务</span>
-                <strong class="metric-value" id="metricTotal">0</strong>
-                <span class="metric-footnote">含队列和已完成记录</span>
-            </article>
-            <article class="metric-card">
-                <span class="metric-label">排队中</span>
-                <strong class="metric-value" id="metricQueued">0</strong>
-                <span class="metric-footnote">等待 worker 取出执行</span>
-            </article>
-            <article class="metric-card">
-                <span class="metric-label">执行中</span>
-                <strong class="metric-value" id="metricRunning">0</strong>
-                <span class="metric-footnote">同一时刻仅允许 1 个</span>
-            </article>
-            <article class="metric-card">
-                <span class="metric-label">已检视 / 失败</span>
-                <strong class="metric-value metric-pair"><span id="metricCompleted">0</span><span class="metric-divider">/</span><span id="metricFailed">0</span></strong>
-                <span class="metric-footnote">保留结果与完整执行日志</span>
-            </article>
-        </section>
 
         <section class="workspace-grid">
             <div class="workspace-main">
                 <section class="panel-card submit-panel">
-                    <div class="panel-head">
-                        <div>
-                            <h2>发起检视</h2>
-                            <p>当前默认支持 GitLab MR + OpenCode Agent，后续可通过注册机制继续扩展。</p>
-                        </div>
-                    </div>
-
                     <form id="reviewForm" class="review-form">
-                        <div class="form-field form-field-span-2">
+                        <div class="form-field">
                             <label for="mrUrlInput">MR 检视地址</label>
-                            <input id="mrUrlInput" name="mr_url" type="url" placeholder="https://gitlab.example.com/group/project/-/merge_requests/123" required>
+                            <input id="mrUrlInput" name="mr_url" type="url" placeholder="https://xxx.example.com/group/project/-/merge_requests/123" required>
                         </div>
 
-                        <div class="form-field">
-                            <label for="hubSelect">代码平台 Hub</label>
-                            <select id="hubSelect" name="hub_id"></select>
+                        <div class="form-inline-row">
+                            <div class="form-field">
+                                <label for="hubSelect">代码平台 Hub</label>
+                                <select id="hubSelect" name="hub_id"></select>
+                            </div>
+
+                            <div class="form-field">
+                                <label for="agentSelect">AI Agent</label>
+                                <select id="agentSelect" name="agent_id"></select>
+                            </div>
+
+                            <div class="form-field">
+                                <label for="modelSelect">模型</label>
+                                <select id="modelSelect" name="model_id" required></select>
+                            </div>
+
+                            <div class="form-actions form-actions-inline">
+                                <button type="submit" class="primary-button" id="submitButton">检视</button>
+                            </div>
                         </div>
 
-                        <div class="form-field">
-                            <label for="agentSelect">AI Agent</label>
-                            <select id="agentSelect" name="agent_id"></select>
-                        </div>
-
-                        <div class="form-field form-field-span-2">
-                            <label for="modelInput">模型</label>
-                            <input id="modelInput" name="model_id" list="modelSuggestions" placeholder="先选择 Agent，再选择或输入模型" required>
-                            <datalist id="modelSuggestions"></datalist>
-                            <div class="field-hint" id="modelHint">等待加载 Agent 模型列表</div>
-                        </div>
-
-                        <div class="form-actions">
-                            <button type="submit" class="primary-button" id="submitButton">加入检视队列</button>
-                            <button type="button" class="secondary-button" id="refreshButton">刷新记录</button>
-                        </div>
+                        <div class="field-hint" id="modelHint" hidden></div>
                     </form>
                 </section>
 
                 <section class="panel-card queue-panel">
                     <div class="panel-head">
-                        <div>
+                        <div class="queue-heading">
                             <h2>队列与历史记录</h2>
-                            <p>点击任意记录可查看命令行、检视结果和完整日志。</p>
+                        </div>
+                        <div class="queue-toolbar">
+                            <button type="button" class="secondary-button" id="queueRefreshButton">刷新</button>
+                            <button type="button" class="secondary-button" id="autoRefreshToggleButton">自动刷新: 关</button>
                         </div>
                     </div>
 
@@ -118,102 +85,121 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <div class="table-footer" id="tableFooter" style="display: none;">
+                        <div class="right-controls">
+                            <div class="pagination-controls">
+                                <span id="prevBtn" class="page-nav-text disabled" role="button" tabindex="0" aria-label="上一页">&lt;</span>
+                                <span class="page-info" id="pageInfo">第 1 页 / 共 1 页</span>
+                                <span id="nextBtn" class="page-nav-text disabled" role="button" tabindex="0" aria-label="下一页">&gt;</span>
+                            </div>
+                            <div class="quick-jump">
+                                <label for="pageJumpInput">跳至</label>
+                                <input id="pageJumpInput" type="number" min="1" value="1">
+                            </div>
+                            <div class="page-size-controls">
+                                <label for="pageSizeSelect">每页显示:</label>
+                                <select id="pageSizeSelect">
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                </select>
+                            </div>
+                            <span class="total-count" id="totalCount">共 0 条</span>
+                        </div>
+                    </div>
                 </section>
             </div>
+        </section>
+    </div>
+</div>
 
-            <aside class="workspace-side">
-                <section class="panel-card detail-panel">
-                    <div class="panel-head panel-head-tight">
-                        <div>
-                            <h2>检视详情</h2>
-                            <p>查看执行命令、检视结果和逐行日志。</p>
-                        </div>
-                        <span class="status-pill" id="detailStatusPill">未选择</span>
+<div class="detail-modal" id="detailModal" hidden>
+    <div class="detail-modal-backdrop" data-close-detail-modal></div>
+    <div class="detail-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="detailModalTitle">
+        <section class="detail-modal-card">
+            <div class="panel-head panel-head-tight">
+                <h2 id="detailModalTitle">检视详情</h2>
+                <div class="detail-modal-actions">
+                    <span class="status-pill" id="detailStatusPill">-</span>
+                    <button type="button" class="secondary-button" id="detailRetryButton">重来当前任务</button>
+                    <button type="button" class="secondary-button" id="detailCloseButton" data-close-detail-modal>关闭</button>
+                </div>
+            </div>
+
+            <div class="detail-content" id="detailContent" hidden>
+                <dl class="detail-grid">
+                    <div class="detail-item">
+                        <dt>记录 ID</dt>
+                        <dd id="detailId">-</dd>
                     </div>
-
-                    <div class="detail-empty" id="detailEmpty">
-                        请选择左侧的一条检视记录。
+                    <div class="detail-item">
+                        <dt>队列位置</dt>
+                        <dd id="detailQueuePosition">-</dd>
                     </div>
-
-                    <div class="detail-content" id="detailContent" hidden>
-                        <div class="detail-toolbar">
-                            <button type="button" class="secondary-button" id="detailRetryButton">重来当前任务</button>
-                        </div>
-
-                        <dl class="detail-grid">
-                            <div class="detail-item">
-                                <dt>记录 ID</dt>
-                                <dd id="detailId">-</dd>
-                            </div>
-                            <div class="detail-item">
-                                <dt>队列位置</dt>
-                                <dd id="detailQueuePosition">-</dd>
-                            </div>
-                            <div class="detail-item detail-item-span-2">
-                                <dt>MR 地址</dt>
-                                <dd><a id="detailMrUrl" href="#" target="_blank" rel="noreferrer">-</a></dd>
-                            </div>
-                            <div class="detail-item">
-                                <dt>Hub</dt>
-                                <dd id="detailHub">-</dd>
-                            </div>
-                            <div class="detail-item">
-                                <dt>Agent</dt>
-                                <dd id="detailAgent">-</dd>
-                            </div>
-                            <div class="detail-item">
-                                <dt>模型</dt>
-                                <dd id="detailModel">-</dd>
-                            </div>
-                            <div class="detail-item">
-                                <dt>源分支</dt>
-                                <dd id="detailSourceBranch">-</dd>
-                            </div>
-                            <div class="detail-item">
-                                <dt>目标分支</dt>
-                                <dd id="detailTargetBranch">-</dd>
-                            </div>
-                            <div class="detail-item">
-                                <dt>创建时间</dt>
-                                <dd id="detailCreatedAt">-</dd>
-                            </div>
-                            <div class="detail-item">
-                                <dt>开始时间</dt>
-                                <dd id="detailStartedAt">-</dd>
-                            </div>
-                            <div class="detail-item">
-                                <dt>结束时间</dt>
-                                <dd id="detailFinishedAt">-</dd>
-                            </div>
-                            <div class="detail-item detail-item-span-2">
-                                <dt>工作目录</dt>
-                                <dd id="detailWorkingDirectory">-</dd>
-                            </div>
-                        </dl>
-
-                        <section class="detail-block">
-                            <div class="detail-block-head">
-                                <h3>执行命令</h3>
-                            </div>
-                            <pre id="detailCommand">-</pre>
-                        </section>
-
-                        <section class="detail-block">
-                            <div class="detail-block-head">
-                                <h3>检视结果</h3>
-                            </div>
-                            <pre id="detailResult">-</pre>
-                        </section>
-
-                        <section class="detail-block">
-                            <div class="detail-block-head">
-                                <h3>执行日志</h3>
-                            </div>
-                            <pre id="detailLogs">-</pre>
-                        </section>
+                    <div class="detail-item detail-item-span-2">
+                        <dt>MR 地址</dt>
+                        <dd><a id="detailMrUrl" href="#" target="_blank" rel="noreferrer">-</a></dd>
                     </div>
+                    <div class="detail-item">
+                        <dt>Hub</dt>
+                        <dd id="detailHub">-</dd>
+                    </div>
+                    <div class="detail-item">
+                        <dt>Agent</dt>
+                        <dd id="detailAgent">-</dd>
+                    </div>
+                    <div class="detail-item">
+                        <dt>模型</dt>
+                        <dd id="detailModel">-</dd>
+                    </div>
+                    <div class="detail-item">
+                        <dt>源分支</dt>
+                        <dd id="detailSourceBranch">-</dd>
+                    </div>
+                    <div class="detail-item">
+                        <dt>目标分支</dt>
+                        <dd id="detailTargetBranch">-</dd>
+                    </div>
+                    <div class="detail-item">
+                        <dt>创建时间</dt>
+                        <dd id="detailCreatedAt">-</dd>
+                    </div>
+                    <div class="detail-item">
+                        <dt>开始时间</dt>
+                        <dd id="detailStartedAt">-</dd>
+                    </div>
+                    <div class="detail-item">
+                        <dt>结束时间</dt>
+                        <dd id="detailFinishedAt">-</dd>
+                    </div>
+                    <div class="detail-item detail-item-span-2">
+                        <dt>工作目录</dt>
+                        <dd id="detailWorkingDirectory">-</dd>
+                    </div>
+                </dl>
+
+                <section class="detail-block">
+                    <div class="detail-block-head">
+                        <h3>执行命令</h3>
+                    </div>
+                    <pre id="detailCommand">-</pre>
                 </section>
-            </aside>
+
+                <section class="detail-block">
+                    <div class="detail-block-head">
+                        <h3>检视结果</h3>
+                    </div>
+                    <pre id="detailResult">-</pre>
+                </section>
+
+                <section class="detail-block">
+                    <div class="detail-block-head">
+                        <h3>执行日志</h3>
+                    </div>
+                    <pre id="detailLogs">-</pre>
+                </section>
+            </div>
         </section>
     </div>
 </div>
@@ -222,5 +208,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="/static/js/review.js?v=20260320-2"></script>
+<script src="/static/js/review.js?v=20260321-7"></script>
 {% endblock %}

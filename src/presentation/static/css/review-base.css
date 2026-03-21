@@ -184,6 +184,12 @@ code {
     background: var(--surface-hover);
 }
 
+.secondary-button.is-active {
+    border-color: var(--primary);
+    color: var(--primary-strong);
+    background: var(--surface-hover);
+}
+
 .status-pill {
     display: inline-flex;
     align-items: center;

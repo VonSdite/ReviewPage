@@ -41,10 +41,11 @@ class WebController:
 
     def list_reviews(self) -> Response:
         try:
-            limit = min(max(int(request.args.get("limit", 50)), 1), 200)
-            return jsonify(self._review_service.list_reviews(limit=limit))
+            page = max(int(request.args.get("page", 1)), 1)
+            page_size = min(max(int(request.args.get("page_size", 50)), 1), 200)
+            return jsonify(self._review_service.list_reviews(page=page, page_size=page_size))
         except ValueError:
-            return jsonify({"error": "limit must be an integer"}), 400
+            return jsonify({"error": "page and page_size must be integers"}), 400
         except Exception as exc:
             self._logger.exception("Failed to list reviews")
             return jsonify({"error": str(exc)}), 500

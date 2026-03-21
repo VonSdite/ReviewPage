@@ -2,8 +2,14 @@
     const state = {
         meta: null,
         records: [],
-        selectedReviewId: null,
-        refreshTimer: null
+        openDetailId: null,
+        refreshTimer: null,
+        autoRefreshEnabled: false,
+        page: 1,
+        pageSize: 50,
+        totalPages: 1,
+        totalRecords: 0,
+        jumpDebounceTimer: null
     };
 
     const elements = {};
@@ -13,25 +19,26 @@
         elements.mrUrlInput = document.getElementById('mrUrlInput');
         elements.hubSelect = document.getElementById('hubSelect');
         elements.agentSelect = document.getElementById('agentSelect');
-        elements.modelInput = document.getElementById('modelInput');
-        elements.modelSuggestions = document.getElementById('modelSuggestions');
+        elements.modelSelect = document.getElementById('modelSelect');
         elements.modelHint = document.getElementById('modelHint');
-        elements.refreshButton = document.getElementById('refreshButton');
+        elements.queueRefreshButton = document.getElementById('queueRefreshButton');
+        elements.autoRefreshToggleButton = document.getElementById('autoRefreshToggleButton');
+        elements.tableFooter = document.getElementById('tableFooter');
+        elements.prevBtn = document.getElementById('prevBtn');
+        elements.nextBtn = document.getElementById('nextBtn');
+        elements.pageInfo = document.getElementById('pageInfo');
+        elements.pageJumpInput = document.getElementById('pageJumpInput');
+        elements.pageSizeSelect = document.getElementById('pageSizeSelect');
+        elements.totalCount = document.getElementById('totalCount');
         elements.submitButton = document.getElementById('submitButton');
         elements.recordsTableBody = document.getElementById('recordsTableBody');
-        elements.detailEmpty = document.getElementById('detailEmpty');
-        elements.detailContent = document.getElementById('detailContent');
+        elements.toastStack = document.getElementById('toastStack');
+
+        elements.detailModal = document.getElementById('detailModal');
+        elements.detailCloseButton = document.getElementById('detailCloseButton');
         elements.detailStatusPill = document.getElementById('detailStatusPill');
         elements.detailRetryButton = document.getElementById('detailRetryButton');
-        elements.toastStack = document.getElementById('toastStack');
-        elements.workerHint = document.getElementById('workerHint');
-
-        elements.metricTotal = document.getElementById('metricTotal');
-        elements.metricQueued = document.getElementById('metricQueued');
-        elements.metricRunning = document.getElementById('metricRunning');
-        elements.metricCompleted = document.getElementById('metricCompleted');
-        elements.metricFailed = document.getElementById('metricFailed');
-
+        elements.detailContent = document.getElementById('detailContent');
         elements.detailId = document.getElementById('detailId');
         elements.detailQueuePosition = document.getElementById('detailQueuePosition');
         elements.detailMrUrl = document.getElementById('detailMrUrl');
@@ -58,6 +65,7 @@
         if (Number.isNaN(date.getTime())) {
             return String(value);
         }
+
         return date.toLocaleString('zh-CN', {
             hour12: false
         });
@@ -80,6 +88,18 @@
         window.setTimeout(function() {
             item.remove();
         }, 3600);
+    }
+
+    function openDetailModal() {
+        elements.detailModal.hidden = false;
+        document.body.classList.add('modal-open');
+    }
+
+    function closeDetailModal() {
+        state.openDetailId = null;
+        elements.detailModal.hidden = true;
+        elements.detailContent.hidden = true;
+        document.body.classList.remove('modal-open');
     }
 
     function findAgentMeta(agentId) {
@@ -108,9 +128,13 @@
     }
 
     function renderStatusPill(record) {
-        const statusClass = getStatusClass(record);
-        const label = record ? record.status_label : '未选择';
-        return `<span class="status-pill ${statusClass}">${escapeHtml(label)}</span>`;
+        return `<span class="status-pill ${getStatusClass(record)}">${escapeHtml(record.status_label)}</span>`;
+    }
+
+    function setModelHint(message) {
+        const text = String(message || '').trim();
+        elements.modelHint.textContent = text;
+        elements.modelHint.hidden = !text;
     }
 
     function populateHubSelect() {
@@ -156,33 +180,37 @@
         const agentMeta = findAgentMeta(elements.agentSelect.value);
         const models = agentMeta ? agentMeta.models || [] : [];
 
-        elements.modelSuggestions.innerHTML = '';
-        models.forEach(function(model) {
-            const option = document.createElement('option');
-            option.value = model.id;
-            option.label = model.label || model.id;
-            elements.modelSuggestions.appendChild(option);
-        });
+        elements.modelSelect.innerHTML = '';
 
-        if (models.length > 0 && !elements.modelInput.value) {
-            elements.modelInput.value = models[0].id;
+        function appendOption(value, label, options) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            if (options && options.disabled) {
+                option.disabled = true;
+            }
+            if (options && options.selected) {
+                option.selected = true;
+            }
+            elements.modelSelect.appendChild(option);
         }
 
         if (!agentMeta) {
-            elements.modelHint.textContent = '等待加载 Agent 模型列表';
+            appendOption('', '等待加载模型列表', { disabled: true, selected: true });
+            setModelHint('');
             return;
         }
 
-        if (agentMeta.models.length === 0) {
-            elements.modelHint.textContent = agentMeta.model_error || '当前 Agent 没有可选模型，请手动输入';
+        if (models.length === 0) {
+            appendOption('', '暂无可用模型', { disabled: true, selected: true });
+            setModelHint(agentMeta.model_error || '当前 Agent 没有可选模型');
             return;
         }
 
-        let hint = `已加载 ${agentMeta.models.length} 个模型，来源：${agentMeta.model_source}`;
-        if (agentMeta.model_error) {
-            hint += `，附带提示：${agentMeta.model_error}`;
-        }
-        elements.modelHint.textContent = hint;
+        models.forEach(function(model) {
+            appendOption(model.id, model.label || model.id);
+        });
+        setModelHint('');
     }
 
     async function loadMeta() {
@@ -197,20 +225,81 @@
         populateAgentSelect();
     }
 
-    function renderStats(stats) {
-        elements.metricTotal.textContent = String(stats.total || 0);
-        elements.metricQueued.textContent = String(stats.queued || 0);
-        elements.metricRunning.textContent = String(stats.running || 0);
-        elements.metricCompleted.textContent = String(stats.completed || 0);
-        elements.metricFailed.textContent = String(stats.failed || 0);
-
-        if ((stats.running || 0) > 0) {
-            elements.workerHint.textContent = '后台当前有检视任务正在执行';
-        } else if ((stats.queued || 0) > 0) {
-            elements.workerHint.textContent = '后台当前为空闲，队列中仍有待执行任务';
-        } else {
-            elements.workerHint.textContent = '后台空闲，可继续提交检视任务';
+    function syncAutoRefreshUi() {
+        if (state.autoRefreshEnabled) {
+            elements.autoRefreshToggleButton.textContent = '自动刷新: 开';
+            elements.autoRefreshToggleButton.classList.add('is-active');
+            return;
         }
+        elements.autoRefreshToggleButton.textContent = '自动刷新: 关';
+        elements.autoRefreshToggleButton.classList.remove('is-active');
+    }
+
+    function setAutoRefresh(enabled) {
+        state.autoRefreshEnabled = Boolean(enabled);
+
+        if (state.refreshTimer) {
+            window.clearInterval(state.refreshTimer);
+            state.refreshTimer = null;
+        }
+
+        if (state.autoRefreshEnabled) {
+            state.refreshTimer = window.setInterval(function() {
+                refreshReviews().catch(function(error) {
+                    showToast(error.message || String(error), 'error');
+                    setAutoRefresh(false);
+                });
+            }, 4000);
+        }
+
+        syncAutoRefreshUi();
+    }
+
+    function renderPagination(pagination) {
+        const info = pagination || {};
+        state.page = Number(info.page) || 1;
+        state.pageSize = Number(info.page_size) || state.pageSize || 50;
+        state.totalPages = Number(info.total_pages) || 1;
+        state.totalRecords = Number(info.total) || 0;
+
+        elements.pageInfo.textContent = `第 ${state.page} 页 / 共 ${state.totalPages} 页`;
+        elements.totalCount.textContent = `共 ${state.totalRecords} 条`;
+        elements.prevBtn.classList.toggle('disabled', !info.has_prev);
+        elements.nextBtn.classList.toggle('disabled', !info.has_next);
+        elements.pageJumpInput.max = String(state.totalPages);
+        elements.pageJumpInput.value = String(state.page);
+        elements.pageSizeSelect.value = String(state.pageSize);
+        elements.tableFooter.style.display = 'flex';
+    }
+
+    function jumpToPage(force) {
+        const page = Number.parseInt(elements.pageJumpInput.value, 10);
+        if (Number.isNaN(page)) {
+            if (force) {
+                elements.pageJumpInput.value = String(state.page);
+            }
+            return;
+        }
+
+        const target = Math.min(state.totalPages, Math.max(1, page));
+        if (target === state.page) {
+            elements.pageJumpInput.value = String(state.page);
+            return;
+        }
+
+        state.page = target;
+        refreshReviews().catch(function(error) {
+            showToast(error.message || String(error), 'error');
+        });
+    }
+
+    function queueJumpToPage() {
+        if (state.jumpDebounceTimer) {
+            window.clearTimeout(state.jumpDebounceTimer);
+        }
+        state.jumpDebounceTimer = window.setTimeout(function() {
+            jumpToPage(false);
+        }, 350);
     }
 
     function renderRecords(records) {
@@ -225,10 +314,10 @@
             const mrTitle = record.title || record.mr_url;
             const queueHint = record.runtime_state === 'queued' && record.queue_position
                 ? `排队第 ${record.queue_position} 位`
-                : (record.runtime_state === 'running' ? '后台执行中' : '已完成');
+                : (record.runtime_state === 'running' ? '后台执行中' : '已结束');
 
             return `
-                <tr data-review-id="${record.id}" class="${record.id === state.selectedReviewId ? 'is-active' : ''}">
+                <tr>
                     <td>#${record.id}</td>
                     <td>
                         <div class="record-meta">
@@ -253,11 +342,8 @@
                     </td>
                     <td>
                         <div class="record-actions">
-                            <button
-                                type="button"
-                                class="retry-inline-button"
-                                data-retry-review-id="${record.id}"
-                            >重来</button>
+                            <button type="button" class="table-action-button" data-view-review-id="${record.id}">查看详情</button>
+                            <button type="button" class="table-action-button" data-retry-review-id="${record.id}">重来</button>
                         </div>
                     </td>
                 </tr>
@@ -265,44 +351,31 @@
         }).join('');
     }
 
-    async function refreshReviews(options) {
-        const keepSelection = !options || options.keepSelection !== false;
-        const response = await fetch('/api/reviews?limit=100');
+    async function refreshReviews() {
+        const params = new URLSearchParams({
+            page: String(state.page),
+            page_size: String(state.pageSize)
+        });
+        const response = await fetch(`/api/reviews?${params.toString()}`);
         const payload = await response.json();
         if (!response.ok) {
             throw new Error(payload.error || '加载记录失败');
         }
 
-        renderStats(payload.stats || {});
         renderRecords(payload.records || []);
+        renderPagination(payload.pagination || {});
 
-        if (keepSelection && state.selectedReviewId != null) {
-            const exists = state.records.some(function(record) {
-                return record.id === state.selectedReviewId;
-            });
-            if (exists) {
-                await loadDetail(state.selectedReviewId, true);
-                return;
-            }
-            state.selectedReviewId = null;
+        if (state.openDetailId != null && !elements.detailModal.hidden) {
+            await loadDetail(state.openDetailId, true);
         }
-
-        if (state.selectedReviewId == null && state.records.length > 0) {
-            await loadDetail(state.records[0].id, true);
-        }
-    }
-
-    function setDetailVisibility(hasDetail) {
-        elements.detailEmpty.hidden = hasDetail;
-        elements.detailContent.hidden = !hasDetail;
     }
 
     function renderDetail(detail) {
-        state.selectedReviewId = detail.id;
+        state.openDetailId = detail.id;
         elements.detailStatusPill.className = `status-pill ${getStatusClass(detail)}`;
         elements.detailStatusPill.textContent = detail.status_label;
         elements.detailRetryButton.disabled = !detail.can_retry;
-        setDetailVisibility(true);
+        elements.detailContent.hidden = false;
 
         elements.detailId.textContent = `#${detail.id}`;
         elements.detailQueuePosition.textContent = detail.queue_position ? `第 ${detail.queue_position} 位` : '-';
@@ -323,50 +396,7 @@
             return item.line;
         }).join('\n') || '-';
 
-        renderRecords(state.records);
-    }
-
-    async function retryReview(reviewId, triggerButton) {
-        if (!Number.isFinite(reviewId)) {
-            return;
-        }
-
-        const button = triggerButton || null;
-        const originalText = button ? button.textContent : '';
-
-        if (button) {
-            button.disabled = true;
-            button.classList.add('is-loading');
-            button.textContent = '重来中...';
-        }
-        if (elements.detailRetryButton && Number(state.selectedReviewId) === reviewId && elements.detailRetryButton !== button) {
-            elements.detailRetryButton.disabled = true;
-        }
-
-        try {
-            const response = await fetch(`/api/reviews/${reviewId}/retry`, {
-                method: 'POST'
-            });
-            const result = await response.json();
-            if (!response.ok) {
-                throw new Error(result.error || '重来任务创建失败');
-            }
-
-            showToast(`已基于任务 #${reviewId} 新建检视任务 #${result.id}`, 'success');
-            await refreshReviews({ keepSelection: false });
-            await loadDetail(result.id, true);
-        } catch (error) {
-            showToast(error.message || String(error), 'error');
-            if (state.selectedReviewId != null) {
-                await loadDetail(state.selectedReviewId, true);
-            }
-        } finally {
-            if (button) {
-                button.disabled = false;
-                button.classList.remove('is-loading');
-                button.textContent = originalText || '重来';
-            }
-        }
+        openDetailModal();
     }
 
     async function loadDetail(reviewId, silent) {
@@ -387,7 +417,7 @@
             mr_url: elements.mrUrlInput.value.trim(),
             hub_id: elements.hubSelect.value,
             agent_id: elements.agentSelect.value,
-            model_id: elements.modelInput.value.trim()
+            model_id: elements.modelSelect.value.trim()
         };
 
         if (!payload.mr_url) {
@@ -397,8 +427,8 @@
         }
 
         if (!payload.model_id) {
-            showToast('请先选择或输入模型', 'error');
-            elements.modelInput.focus();
+            showToast('请先选择模型', 'error');
+            elements.modelSelect.focus();
             return;
         }
 
@@ -421,8 +451,8 @@
             elements.reviewForm.reset();
             populateHubSelect();
             populateAgentSelect();
-            await refreshReviews({ keepSelection: false });
-            await loadDetail(result.id, true);
+            state.page = 1;
+            await refreshReviews();
         } catch (error) {
             showToast(error.message || String(error), 'error');
         } finally {
@@ -431,52 +461,156 @@
         }
     }
 
+    async function retryReview(reviewId, triggerButton) {
+        if (!Number.isFinite(reviewId)) {
+            return;
+        }
+
+        const button = triggerButton || null;
+        const originalText = button ? button.textContent : '';
+        if (button) {
+            button.disabled = true;
+            button.classList.add('is-loading');
+            button.textContent = '重来中...';
+        }
+
+        try {
+            const response = await fetch(`/api/reviews/${reviewId}/retry`, {
+                method: 'POST'
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || '重来任务创建失败');
+            }
+
+            showToast(`已基于任务 #${reviewId} 新建检视任务 #${result.id}`, 'success');
+            state.page = 1;
+            await refreshReviews();
+
+            if (elements.detailModal.hidden === false && state.openDetailId === reviewId) {
+                await loadDetail(result.id, true);
+            }
+        } catch (error) {
+            showToast(error.message || String(error), 'error');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.classList.remove('is-loading');
+                button.textContent = originalText || '重来';
+            }
+        }
+    }
+
     function bindEvents() {
         elements.agentSelect.addEventListener('change', function() {
-            elements.modelInput.value = '';
             updateModelSuggestions();
         });
 
         elements.reviewForm.addEventListener('submit', submitReview);
-        elements.refreshButton.addEventListener('click', function() {
+        elements.queueRefreshButton.addEventListener('click', function() {
             refreshReviews().catch(function(error) {
                 showToast(error.message || String(error), 'error');
             });
         });
 
-        elements.detailRetryButton.addEventListener('click', function() {
-            if (state.selectedReviewId == null) {
+        elements.autoRefreshToggleButton.addEventListener('click', function() {
+            setAutoRefresh(!state.autoRefreshEnabled);
+            refreshReviews().catch(function(error) {
+                showToast(error.message || String(error), 'error');
+            });
+        });
+
+        elements.prevBtn.addEventListener('click', function() {
+            if (state.page <= 1) {
                 return;
             }
-            retryReview(Number(state.selectedReviewId), elements.detailRetryButton).catch(function(error) {
+            state.page -= 1;
+            refreshReviews().catch(function(error) {
+                showToast(error.message || String(error), 'error');
+            });
+        });
+
+        elements.nextBtn.addEventListener('click', function() {
+            if (state.page >= state.totalPages) {
+                return;
+            }
+            state.page += 1;
+            refreshReviews().catch(function(error) {
+                showToast(error.message || String(error), 'error');
+            });
+        });
+
+        [elements.prevBtn, elements.nextBtn].forEach(function(node) {
+            node.addEventListener('keydown', function(event) {
+                if (event.key !== 'Enter' && event.key !== ' ') {
+                    return;
+                }
+                event.preventDefault();
+                node.click();
+            });
+        });
+
+        elements.pageJumpInput.addEventListener('input', queueJumpToPage);
+        elements.pageJumpInput.addEventListener('blur', function() {
+            jumpToPage(true);
+        });
+        elements.pageJumpInput.addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                jumpToPage(true);
+            }
+        });
+
+        elements.pageSizeSelect.addEventListener('change', function() {
+            const nextPageSize = Number.parseInt(elements.pageSizeSelect.value, 10);
+            if (!Number.isFinite(nextPageSize) || nextPageSize <= 0 || nextPageSize === state.pageSize) {
+                return;
+            }
+            state.pageSize = nextPageSize;
+            state.page = 1;
+            refreshReviews().catch(function(error) {
                 showToast(error.message || String(error), 'error');
             });
         });
 
         elements.recordsTableBody.addEventListener('click', function(event) {
-            const retryButton = event.target.closest('[data-retry-review-id]');
-            if (retryButton) {
-                event.stopPropagation();
-                const reviewId = Number(retryButton.getAttribute('data-retry-review-id'));
-                retryReview(reviewId, retryButton).catch(function(error) {
+            const viewButton = event.target.closest('[data-view-review-id]');
+            if (viewButton) {
+                const reviewId = Number(viewButton.getAttribute('data-view-review-id'));
+                loadDetail(reviewId).catch(function(error) {
                     showToast(error.message || String(error), 'error');
                 });
                 return;
             }
 
-            const row = event.target.closest('tr[data-review-id]');
-            if (!row) {
+            const retryButton = event.target.closest('[data-retry-review-id]');
+            if (retryButton) {
+                const reviewId = Number(retryButton.getAttribute('data-retry-review-id'));
+                retryReview(reviewId, retryButton).catch(function(error) {
+                    showToast(error.message || String(error), 'error');
+                });
+            }
+        });
+
+        elements.detailRetryButton.addEventListener('click', function() {
+            if (state.openDetailId == null) {
                 return;
             }
-
-            const reviewId = Number(row.getAttribute('data-review-id'));
-            if (!Number.isFinite(reviewId)) {
-                return;
-            }
-
-            loadDetail(reviewId).catch(function(error) {
+            retryReview(Number(state.openDetailId), elements.detailRetryButton).catch(function(error) {
                 showToast(error.message || String(error), 'error');
             });
+        });
+
+        document.querySelectorAll('[data-close-detail-modal]').forEach(function(node) {
+            node.addEventListener('click', function() {
+                closeDetailModal();
+            });
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape' && !elements.detailModal.hidden) {
+                closeDetailModal();
+            }
         });
     }
 
@@ -487,17 +621,8 @@
         }
         bindEvents();
         await loadMeta();
+        setAutoRefresh(false);
         await refreshReviews();
-
-        state.refreshTimer = window.setInterval(function() {
-            refreshReviews().catch(function(error) {
-                showToast(error.message || String(error), 'error');
-                if (state.refreshTimer) {
-                    window.clearInterval(state.refreshTimer);
-                    state.refreshTimer = null;
-                }
-            });
-        }, 4000);
     }
 
     document.addEventListener('DOMContentLoaded', function() {

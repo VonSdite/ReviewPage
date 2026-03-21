@@ -254,18 +254,33 @@ class ReviewRepository:
                 (result_text, error_message, now, now, review_id),
             )
 
-    def list_reviews(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_reviews(self, page: int = 1, page_size: int = 50) -> dict[str, Any]:
+        page = max(int(page), 1)
+        page_size = max(int(page_size), 1)
+        offset = (page - 1) * page_size
+
         with self._connection_factory() as conn:
+            total_row = conn.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM review_records
+                """
+            ).fetchone()
+            total = int(total_row["total"] or 0) if total_row is not None else 0
+
             rows = conn.execute(
                 """
                 SELECT *
                 FROM review_records
                 ORDER BY id DESC
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
-                (limit,),
+                (page_size, offset),
             ).fetchall()
-            return [dict(row) for row in rows]
+            return {
+                "records": [dict(row) for row in rows],
+                "total": total,
+            }
 
     def get_review(self, review_id: int) -> dict[str, Any] | None:
         with self._connection_factory() as conn:

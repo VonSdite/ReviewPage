@@ -47,6 +47,7 @@ class ReviewRepositoryTestCase(unittest.TestCase):
             detail = repository.get_review(claimed["id"])
             logs = repository.list_review_logs(claimed["id"])
             stats = repository.get_review_stats()
+            paged = repository.list_reviews(page=1, page_size=10)
 
         self.assertEqual(detail["status"], "completed")
         self.assertEqual(detail["runtime_state"], "finished")
@@ -54,6 +55,31 @@ class ReviewRepositoryTestCase(unittest.TestCase):
         self.assertEqual(logs[0]["line"], "[system] started")
         self.assertEqual(stats["completed"], 1)
         self.assertEqual(stats["running"], 0)
+        self.assertEqual(paged["total"], 1)
+        self.assertEqual(len(paged["records"]), 1)
+
+    def test_list_reviews_supports_pagination(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "review.db"
+            repository = ReviewRepository(create_connection_factory(db_path))
+
+            for index in range(5):
+                repository.create_review(
+                    mr_url=f"https://gitlab.example.com/group/project/-/merge_requests/{index + 1}",
+                    hub_id="gitlab",
+                    hub_name="GitLab Merge Request",
+                    agent_id="opencode",
+                    agent_name="OpenCode",
+                    model_id=f"provider/model-{index + 1}",
+                )
+
+            first_page = repository.list_reviews(page=1, page_size=2)
+            second_page = repository.list_reviews(page=2, page_size=2)
+
+        self.assertEqual(first_page["total"], 5)
+        self.assertEqual(len(first_page["records"]), 2)
+        self.assertEqual(first_page["records"][0]["model_id"], "provider/model-5")
+        self.assertEqual(second_page["records"][0]["model_id"], "provider/model-3")
 
 
 if __name__ == "__main__":

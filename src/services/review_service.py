@@ -74,12 +74,30 @@ class ReviewService:
         queue_positions = self._review_repository.get_queue_positions()
         return self._serialize_review_row(row, queue_positions)
 
-    def list_reviews(self, limit: int = 50) -> dict[str, object]:
+    def list_reviews(self, page: int = 1, page_size: int = 50) -> dict[str, object]:
+        page = max(int(page), 1)
+        page_size = min(max(int(page_size), 1), 200)
         queue_positions = self._review_repository.get_queue_positions()
-        rows = self._review_repository.list_reviews(limit=limit)
+        paged = self._review_repository.list_reviews(page=page, page_size=page_size)
+        total = int(paged["total"])
+        total_pages = max((total + page_size - 1) // page_size, 1)
+        current_page = min(page, total_pages)
+
+        if current_page != page:
+            paged = self._review_repository.list_reviews(page=current_page, page_size=page_size)
+
+        rows = paged["records"]
         return {
             "records": [self._serialize_review_row(row, queue_positions) for row in rows],
             "stats": self._review_repository.get_review_stats(),
+            "pagination": {
+                "page": current_page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": total_pages,
+                "has_prev": current_page > 1,
+                "has_next": current_page < total_pages,
+            },
         }
 
     def get_review_detail(self, review_id: int) -> dict[str, object] | None:
