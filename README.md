@@ -59,6 +59,9 @@ http://127.0.0.1:8091
 
 重点配置项：
 
+- `database.path`
+  - 只能写数据目录，例如 `data`
+  - 程序会固定在该目录下使用 `review_page.sqlite3`
 - `hubs.gitlab`
   - `web_base_url`: GitLab 页面地址前缀
   - `api_base_url`: GitLab API 地址前缀

@@ -3,14 +3,14 @@ server:
   port: 8091
 
 database:
-  path: var/review_page.sqlite3
+  path: data
 
 logging:
-  path: var/logs
+  path: data/logs
   level: INFO
 
 workspace:
-  temp_root: var/tmp/reviews
+  temp_root: data/tmp/reviews
 
 queue:
   poll_interval_seconds: 2

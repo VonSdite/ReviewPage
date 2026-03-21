@@ -17,14 +17,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "port": 8091,
     },
     "database": {
-        "path": "var/review_page.sqlite3",
+        "path": "data",
     },
     "logging": {
-        "path": "var/logs",
+        "path": "data/logs",
         "level": "INFO",
     },
     "workspace": {
-        "temp_root": "var/tmp/reviews",
+        "temp_root": "data/tmp/reviews",
     },
     "queue": {
         "poll_interval_seconds": 2,
@@ -94,16 +94,17 @@ class ConfigManager:
         return int(self._config["server"].get("port") or 8091)
 
     def get_database_path(self) -> str:
-        return str(self._resolve_path(self._config["database"].get("path") or "var/review_page.sqlite3"))
+        database_dir = self._resolve_database_dir(self._config["database"].get("path") or "data")
+        return str((database_dir / "review_page.sqlite3").resolve())
 
     def get_log_path(self) -> str:
-        return str(self._resolve_path(self._config["logging"].get("path") or "var/logs"))
+        return str(self._resolve_path(self._config["logging"].get("path") or "data/logs"))
 
     def get_log_level(self) -> str:
         return str(self._config["logging"].get("level") or "INFO")
 
     def get_workspace_temp_root(self) -> str:
-        return str(self._resolve_path(self._config["workspace"].get("temp_root") or "var/tmp/reviews"))
+        return str(self._resolve_path(self._config["workspace"].get("temp_root") or "data/tmp/reviews"))
 
     def get_queue_poll_interval_seconds(self) -> float:
         value = self._config["queue"].get("poll_interval_seconds", 2)
@@ -139,6 +140,12 @@ class ConfigManager:
 
     def get_raw_config(self) -> dict[str, Any]:
         return deepcopy(self._raw_config)
+
+    def _resolve_database_dir(self, value: str | Path) -> Path:
+        candidate = Path(value)
+        if candidate.suffix.lower() in {".db", ".sqlite", ".sqlite3"}:
+            raise ValueError("database.path must be a directory, not a sqlite file path")
+        return self._resolve_path(candidate)
 
     def _resolve_path(self, value: str | Path) -> Path:
         candidate = Path(value)
