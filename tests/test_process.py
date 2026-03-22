@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.utils.process import resolve_command_argv, stream_command
+from src.utils.process import decode_command_output, resolve_command_argv, stream_command
 
 
 class ProcessTestCase(unittest.TestCase):
@@ -24,9 +24,25 @@ class ProcessTestCase(unittest.TestCase):
         self.assertEqual(argv, ["C:/Program Files/Git/bin/bash.exe", "-lc", "opencode models"])
         mocked_which.assert_not_called()
 
+    def test_decode_command_output_prefers_utf8(self):
+        with patch("src.utils.process.locale.getpreferredencoding") as mocked_getpreferredencoding:
+            mocked_getpreferredencoding.return_value = "gbk"
+
+            decoded = decode_command_output("build ✓ maas-glm-4.7".encode("utf-8"))
+
+        self.assertEqual(decoded, "build ✓ maas-glm-4.7")
+
+    def test_decode_command_output_falls_back_to_system_encoding(self):
+        with patch("src.utils.process.locale.getpreferredencoding") as mocked_getpreferredencoding:
+            mocked_getpreferredencoding.return_value = "gbk"
+
+            decoded = decode_command_output("中文输出".encode("gbk"))
+
+        self.assertEqual(decoded, "中文输出")
+
     def test_stream_command_uses_resolved_executable(self):
         process = MagicMock()
-        process.stdout = iter(["provider/model-a\n"])
+        process.stdout = iter(["provider/model-a\n".encode("utf-8")])
         process.wait.return_value = 0
 
         with patch("src.utils.process.resolve_command_argv") as mocked_resolve:

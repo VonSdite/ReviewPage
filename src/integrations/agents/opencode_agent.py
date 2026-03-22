@@ -9,7 +9,7 @@ import shlex
 import subprocess
 
 from ...domain import AgentModelCatalog, ModelChoice, ReviewAgent, ReviewCommandSpec, register_agent_factory
-from ...utils import resolve_command_argv
+from ...utils import decode_command_output, resolve_command_argv
 
 
 class OpencodeReviewAgent(ReviewAgent):
@@ -40,7 +40,7 @@ class OpencodeReviewAgent(ReviewAgent):
                 resolve_command_argv(argv),
                 cwd=str(self._ctx.root_path),
                 capture_output=True,
-                text=True,
+                text=False,
                 check=False,
                 env=self._build_subprocess_env(),
             )
@@ -50,13 +50,14 @@ class OpencodeReviewAgent(ReviewAgent):
             raise ValueError(f"获取模型列表失败：{exc}") from exc
 
         if completed.returncode != 0:
-            stderr = (completed.stderr or completed.stdout or "").strip()
+            stderr = (decode_command_output(completed.stderr) or decode_command_output(completed.stdout)).strip()
             message = stderr or f"命令退出码 {completed.returncode}"
             raise ValueError(f"获取模型列表失败：{message}")
 
+        stdout_text = decode_command_output(completed.stdout)
         model_ids: list[str] = []
         seen: set[str] = set()
-        for raw_line in (completed.stdout or "").splitlines():
+        for raw_line in stdout_text.splitlines():
             line = raw_line.strip()
             if not line:
                 continue

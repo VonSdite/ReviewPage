@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import locale
 import os
 import shlex
 import shutil
@@ -21,6 +22,31 @@ class CommandRunResult:
 
 def format_command(argv: list[str]) -> str:
     return shlex.join(argv)
+
+
+def decode_command_output(data: bytes | str | None) -> str:
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+
+    candidates: list[str] = []
+    for encoding in ("utf-8", locale.getpreferredencoding(False), os.device_encoding(1)):
+        normalized = str(encoding or "").strip()
+        if not normalized:
+            continue
+        if normalized.lower() in {item.lower() for item in candidates}:
+            continue
+        candidates.append(normalized)
+
+    for encoding in candidates:
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+
+    fallback_encoding = candidates[0] if candidates else "utf-8"
+    return data.decode(fallback_encoding, errors="replace")
 
 
 def resolve_command_argv(argv: list[str]) -> list[str]:
@@ -60,7 +86,7 @@ def stream_command(
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
+            text=False,
             bufsize=1,
             env=merged_env,
         )
@@ -78,7 +104,7 @@ def stream_command(
     lines: list[str] = []
     assert process.stdout is not None
     for raw_line in process.stdout:
-        line = raw_line.rstrip("\n")
+        line = decode_command_output(raw_line).rstrip("\r\n")
         lines.append(line)
         if on_output:
             on_output(line)
