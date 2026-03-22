@@ -59,6 +59,7 @@ class ProcessTestCase(unittest.TestCase):
             mocked_popen.call_args.args[0],
             ["C:/Users/Von/AppData/Roaming/npm/opencode.CMD", "models"],
         )
+        self.assertEqual(mocked_popen.call_args.kwargs["bufsize"], -1)
 
 
 if __name__ == "__main__":

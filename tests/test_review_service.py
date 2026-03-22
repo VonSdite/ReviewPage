@@ -164,8 +164,46 @@ class ReviewServiceTestCase(unittest.TestCase):
                 ]
                 handled = service.execute_next_review()
                 self.assertTrue(handled)
-                self.assertTrue(temp_root.exists())
-                self.assertEqual(list(temp_root.iterdir()), [])
+                self.assertFalse(temp_root.exists())
+
+    def test_execute_review_keeps_temp_root_when_other_workspaces_exist(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir) / "workspaces"
+            temp_root.mkdir(parents=True)
+            sibling_workspace = temp_root / "review-keep-me"
+            sibling_workspace.mkdir()
+            repository = ReviewRepository(create_connection_factory(Path(tmpdir) / "review.db"))
+            service = ReviewService(
+                _FakeCtx(temp_root=str(temp_root)),
+                review_repository=repository,
+                agents={"opencode": _FakeAgent()},
+                hubs={"gitlab": _ResolvableFakeHub()},
+            )
+
+            service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/12",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            class _FakeResult:
+                def __init__(self, returncode, output):
+                    self.returncode = returncode
+                    self.output = output
+
+            with patch("src.services.review_service.stream_command") as mocked_stream_command:
+                mocked_stream_command.side_effect = [
+                    _FakeResult(0, "clone ok"),
+                    _FakeResult(1, "review failed"),
+                ]
+                handled = service.execute_next_review()
+
+            self.assertTrue(handled)
+            self.assertTrue(temp_root.exists())
+            self.assertTrue(sibling_workspace.exists())
 
     def test_refresh_agent_models_returns_latest_metadata(self):
         with tempfile.TemporaryDirectory() as tmpdir:

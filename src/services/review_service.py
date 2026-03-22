@@ -233,6 +233,12 @@ class ReviewService:
             self._review_repository.mark_review_failed(review_id, review_output, message)
         finally:
             shutil.rmtree(workspace_dir, ignore_errors=True)
+            try:
+                temp_root.rmdir()
+            except OSError:
+                pass
+            else:
+                append_log(f"[system] 临时根目录已清理：{temp_root}")
             append_log(f"[system] 临时目录已清理：{workspace_dir}")
 
     def _serialize_review_row(

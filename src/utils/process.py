@@ -87,7 +87,7 @@ def stream_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=False,
-            bufsize=1,
+            bufsize=-1,
             env=merged_env,
         )
     except FileNotFoundError as exc:
