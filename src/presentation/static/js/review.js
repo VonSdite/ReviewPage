@@ -42,8 +42,6 @@
         elements.detailStatusPill = document.getElementById('detailStatusPill');
         elements.detailPrefillButton = document.getElementById('detailPrefillButton');
         elements.detailContent = document.getElementById('detailContent');
-        elements.detailId = document.getElementById('detailId');
-        elements.detailQueuePosition = document.getElementById('detailQueuePosition');
         elements.detailMrUrl = document.getElementById('detailMrUrl');
         elements.detailHub = document.getElementById('detailHub');
         elements.detailAgent = document.getElementById('detailAgent');
@@ -53,9 +51,7 @@
         elements.detailCreatedAt = document.getElementById('detailCreatedAt');
         elements.detailStartedAt = document.getElementById('detailStartedAt');
         elements.detailFinishedAt = document.getElementById('detailFinishedAt');
-        elements.detailWorkingDirectory = document.getElementById('detailWorkingDirectory');
         elements.detailCommand = document.getElementById('detailCommand');
-        elements.detailResult = document.getElementById('detailResult');
         elements.detailLogs = document.getElementById('detailLogs');
     }
 
@@ -156,7 +152,7 @@
             return '';
         }
         return model && model.id === defaultModelId
-            ? `${baseLabel}（默认）`
+            ? `⭐ ${baseLabel}`
             : baseLabel;
     }
 
@@ -511,8 +507,6 @@
         elements.detailStatusPill.textContent = detail.status_label;
         elements.detailContent.hidden = false;
 
-        elements.detailId.textContent = `#${detail.id}`;
-        elements.detailQueuePosition.textContent = detail.queue_position ? `第 ${detail.queue_position} 位` : '-';
         elements.detailMrUrl.textContent = detail.mr_url || '-';
         elements.detailMrUrl.href = detail.mr_url || '#';
         elements.detailHub.textContent = detail.hub_id || '-';
@@ -523,9 +517,7 @@
         elements.detailCreatedAt.textContent = formatDate(detail.created_at);
         elements.detailStartedAt.textContent = formatDate(detail.started_at);
         elements.detailFinishedAt.textContent = formatDate(detail.finished_at);
-        elements.detailWorkingDirectory.textContent = detail.working_directory || '-';
         elements.detailCommand.textContent = detail.command_line || '-';
-        elements.detailResult.textContent = detail.result_text || detail.error_message || '-';
         elements.detailLogs.textContent = (detail.logs || []).map(function(item) {
             return item.line;
         }).join('\n') || '-';

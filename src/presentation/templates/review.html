@@ -1,7 +1,7 @@
 {% extends "base_page.html" %}
 
 {% block page_title %}MR 代码检视中心{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260322-4">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260323-2">{% endblock %}
 {% block body_class %}review-page{% endblock %}
 
 {% block body %}
@@ -134,14 +134,6 @@
 
             <div class="detail-content" id="detailContent" hidden>
                 <dl class="detail-grid">
-                    <div class="detail-item">
-                        <dt>记录 ID</dt>
-                        <dd id="detailId">-</dd>
-                    </div>
-                    <div class="detail-item">
-                        <dt>队列位置</dt>
-                        <dd id="detailQueuePosition">-</dd>
-                    </div>
                     <div class="detail-item detail-item-span-2">
                         <dt>MR 地址</dt>
                         <dd><a id="detailMrUrl" href="#" target="_blank" rel="noreferrer">-</a></dd>
@@ -178,10 +170,6 @@
                         <dt>结束时间</dt>
                         <dd id="detailFinishedAt">-</dd>
                     </div>
-                    <div class="detail-item detail-item-span-2">
-                        <dt>工作目录</dt>
-                        <dd id="detailWorkingDirectory">-</dd>
-                    </div>
                 </dl>
 
                 <section class="detail-block">
@@ -189,13 +177,6 @@
                         <h3>执行命令</h3>
                     </div>
                     <pre id="detailCommand">-</pre>
-                </section>
-
-                <section class="detail-block">
-                    <div class="detail-block-head">
-                        <h3>检视结果</h3>
-                    </div>
-                    <pre id="detailResult">-</pre>
                 </section>
 
                 <section class="detail-block">
@@ -213,5 +194,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="/static/js/review.js?v=20260323-2"></script>
+<script src="/static/js/review.js?v=20260323-4"></script>
 {% endblock %}

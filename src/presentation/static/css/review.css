@@ -212,6 +212,13 @@
     flex-wrap: wrap;
 }
 
+.queue-toolbar .secondary-button {
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-size: 12px;
+}
+
 .table-wrap {
     max-width: 100%;
     overflow: auto;
