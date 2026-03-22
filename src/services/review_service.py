@@ -107,19 +107,18 @@ class ReviewService:
         detail["logs"] = self._review_repository.list_review_logs(review_id)
         return detail
 
-    def retry_review(self, review_id: int) -> dict[str, object] | None:
-        row = self._review_repository.get_review(review_id)
-        if row is None:
-            return None
-
-        return self.create_review(
-            {
-                "mr_url": row.get("mr_url"),
-                "hub_id": row.get("hub_id"),
-                "agent_id": row.get("agent_id"),
-                "model_id": row.get("model_id"),
-            }
-        )
+    def refresh_agent_models(self, agent_id: str) -> dict[str, object]:
+        agent = self._agents.get(agent_id)
+        if agent is None:
+            raise ValueError(f"未注册或未启用的 Agent：{agent_id}")
+        catalog = agent.refresh_model_catalog()
+        return {
+            "id": agent.agent_id,
+            "name": agent.agent_id,
+            "models": [item.to_dict() for item in catalog.models],
+            "model_source": catalog.source,
+            "model_error": catalog.error,
+        }
 
     def reset_running_reviews(self) -> None:
         self._review_repository.reset_running_pending_reviews()
@@ -257,5 +256,4 @@ class ReviewService:
             "finished_at": row.get("finished_at"),
             "updated_at": row.get("updated_at"),
             "last_log_seq": row.get("last_log_seq"),
-            "can_retry": True,
         }

@@ -26,6 +26,9 @@ class _FakeConfigManager:
     def get_workspace_temp_root(self):
         return self._temp_root
 
+    def update_agent_models(self, agent_id, models):
+        self.updated_models = (agent_id, list(models))
+
 
 class _FakeCtx:
     def __init__(self, temp_root="/tmp/review-service-tests"):
@@ -41,6 +44,12 @@ class _FakeAgent:
 
     def build_review_command(self, *, model, review_url, workspace_dir):
         return ReviewCommandSpec(argv=["echo", model, review_url, workspace_dir], env={})
+
+    def refresh_model_catalog(self):
+        return AgentModelCatalog(
+            models=[ModelChoice(model_id="provider/model-a"), ModelChoice(model_id="provider/model-b")],
+            source="config",
+        )
 
     def to_metadata(self):
         return {
@@ -112,50 +121,6 @@ class ReviewServiceTestCase(unittest.TestCase):
         self.assertFalse(overflow_page["pagination"]["has_next"])
         self.assertEqual(len(overflow_page["records"]), 1)
 
-    def test_retry_review_creates_new_pending_record(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = ReviewRepository(create_connection_factory(Path(tmpdir) / "review.db"))
-            service = ReviewService(
-                _FakeCtx(),
-                review_repository=repository,
-                agents={"opencode": _FakeAgent()},
-                hubs={"gitlab": _FakeHub()},
-            )
-
-            first = service.create_review(
-                {
-                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/11",
-                    "hub_id": "gitlab",
-                    "agent_id": "opencode",
-                    "model_id": "provider/model-a",
-                }
-            )
-            retried = service.retry_review(first["id"])
-
-        self.assertIsNotNone(retried)
-        assert retried is not None
-        self.assertNotEqual(first["id"], retried["id"])
-        self.assertEqual(retried["mr_url"], first["mr_url"])
-        self.assertEqual(retried["hub_id"], first["hub_id"])
-        self.assertEqual(retried["agent_id"], first["agent_id"])
-        self.assertEqual(retried["model_id"], first["model_id"])
-        self.assertEqual(retried["status"], "pending")
-        self.assertEqual(retried["runtime_state"], "queued")
-
-    def test_retry_review_returns_none_when_missing(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = ReviewRepository(create_connection_factory(Path(tmpdir) / "review.db"))
-            service = ReviewService(
-                _FakeCtx(),
-                review_repository=repository,
-                agents={"opencode": _FakeAgent()},
-                hubs={"gitlab": _FakeHub()},
-            )
-
-            result = service.retry_review(9999)
-
-        self.assertIsNone(result)
-
     def test_execute_review_always_deletes_workspace_on_failure(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir) / "workspaces"
@@ -190,6 +155,25 @@ class ReviewServiceTestCase(unittest.TestCase):
                 self.assertTrue(handled)
                 self.assertTrue(temp_root.exists())
                 self.assertEqual(list(temp_root.iterdir()), [])
+
+    def test_refresh_agent_models_returns_latest_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repository = ReviewRepository(create_connection_factory(Path(tmpdir) / "review.db"))
+            service = ReviewService(
+                _FakeCtx(),
+                review_repository=repository,
+                agents={"opencode": _FakeAgent()},
+                hubs={"gitlab": _FakeHub()},
+            )
+
+            metadata = service.refresh_agent_models("opencode")
+
+        self.assertEqual(metadata["id"], "opencode")
+        self.assertEqual(
+            [item["id"] for item in metadata["models"]],
+            ["provider/model-a", "provider/model-b"],
+        )
+        self.assertEqual(metadata["model_source"], "config")
 
 
 if __name__ == "__main__":

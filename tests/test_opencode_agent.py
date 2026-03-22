@@ -10,16 +10,22 @@ from src.integrations.agents.opencode_agent import OpencodeReviewAgent
 
 
 class _FakeConfigManager:
-    def get_agent_config(self, agent_id):
-        self._last_agent_id = agent_id
-        return {
-            "binary": "opencode",
-            "list_models_command": ["models"],
-            "review_command": ["run", "--model", "{model}", "{prompt}"],
-            "prompt_template": "/review {review_url}",
-            "model_list": ["fallback/model"],
+    def __init__(self):
+        self.updated_models = None
+        self._agent_config = {
+            "list_models_command": "opencode models",
+            "review_command": 'opencode run --model "{model}" "/review {review_url}"',
+            "models": ["configured/model"],
             "extra_env": {"OPENCODE_ENV": "1"},
         }
+
+    def get_agent_config(self, agent_id):
+        self._last_agent_id = agent_id
+        return dict(self._agent_config)
+
+    def update_agent_models(self, agent_id, models):
+        self.updated_models = (agent_id, list(models))
+        self._agent_config["models"] = list(models)
 
 
 class _FakeCompletedProcess:
@@ -37,20 +43,29 @@ class _FakeCtx:
 
 
 class OpencodeAgentTestCase(unittest.TestCase):
-    def test_get_model_catalog_from_command(self):
+    def test_get_model_catalog_reads_from_config(self):
         agent = OpencodeReviewAgent(_FakeCtx())
+        catalog = agent.get_model_catalog()
+
+        self.assertEqual(catalog.source, "config")
+        self.assertEqual([item.model_id for item in catalog.models], ["configured/model"])
+
+    def test_refresh_model_catalog_updates_config(self):
+        ctx = _FakeCtx()
+        agent = OpencodeReviewAgent(ctx)
 
         with patch("src.integrations.agents.opencode_agent.subprocess.run") as mocked_run:
             mocked_run.return_value = _FakeCompletedProcess(
                 returncode=0,
                 stdout="provider/model-a\nprovider/model-b\n",
             )
-            catalog = agent.get_model_catalog()
+            catalog = agent.refresh_model_catalog()
 
-        self.assertEqual(catalog.source, "command")
+        self.assertEqual(catalog.source, "config")
         self.assertEqual([item.model_id for item in catalog.models], ["provider/model-a", "provider/model-b"])
+        self.assertEqual(ctx.config_manager.updated_models, ("opencode", ["provider/model-a", "provider/model-b"]))
 
-    def test_get_model_catalog_falls_back_to_config(self):
+    def test_refresh_model_catalog_raises_when_command_fails(self):
         agent = OpencodeReviewAgent(_FakeCtx())
 
         with patch("src.integrations.agents.opencode_agent.subprocess.run") as mocked_run:
@@ -58,11 +73,8 @@ class OpencodeAgentTestCase(unittest.TestCase):
                 returncode=1,
                 stderr="binary missing",
             )
-            catalog = agent.get_model_catalog()
-
-        self.assertEqual(catalog.source, "config-fallback")
-        self.assertEqual([item.model_id for item in catalog.models], ["fallback/model"])
-        self.assertIn("binary missing", catalog.error)
+            with self.assertRaisesRegex(ValueError, "binary missing"):
+                agent.refresh_model_catalog()
 
     def test_build_review_command_uses_template(self):
         agent = OpencodeReviewAgent(_FakeCtx())

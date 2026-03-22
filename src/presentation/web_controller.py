@@ -24,10 +24,10 @@ class WebController:
     def _register_routes(self) -> None:
         self._app.route("/")(self.index)
         self._app.route("/api/meta", methods=["GET"])(self.get_meta)
+        self._app.route("/api/agents/<string:agent_id>/models/refresh", methods=["POST"])(self.refresh_agent_models)
         self._app.route("/api/reviews", methods=["GET"])(self.list_reviews)
         self._app.route("/api/reviews", methods=["POST"])(self.create_review)
         self._app.route("/api/reviews/<int:review_id>", methods=["GET"])(self.get_review_detail)
-        self._app.route("/api/reviews/<int:review_id>/retry", methods=["POST"])(self.retry_review)
 
     def index(self) -> str:
         return render_template("review.html")
@@ -37,6 +37,15 @@ class WebController:
             return jsonify(self._review_service.get_metadata())
         except Exception as exc:
             self._logger.exception("Failed to get review metadata")
+            return jsonify({"error": str(exc)}), 500
+
+    def refresh_agent_models(self, agent_id: str) -> Response:
+        try:
+            return jsonify(self._review_service.refresh_agent_models(agent_id))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            self._logger.exception("Failed to refresh agent models")
             return jsonify({"error": str(exc)}), 500
 
     def list_reviews(self) -> Response:
@@ -73,17 +82,4 @@ class WebController:
             return jsonify(detail)
         except Exception as exc:
             self._logger.exception("Failed to get review detail")
-            return jsonify({"error": str(exc)}), 500
-
-    def retry_review(self, review_id: int) -> Response:
-        try:
-            review = self._review_service.retry_review(review_id)
-            if review is None:
-                return jsonify({"error": "review record not found"}), 404
-            self._queue_worker.wake_up()
-            return jsonify(review), 201
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except Exception as exc:
-            self._logger.exception("Failed to retry review")
             return jsonify({"error": str(exc)}), 500

@@ -1,46 +1,36 @@
 server:
   host: 0.0.0.0
   port: 8091
-
 database:
   path: data
-
 logging:
   path: data/logs
   level: INFO
-
 workspace:
   temp_root: data/tmp/reviews
-
 queue:
   poll_interval_seconds: 2
-
-plugins:
-  modules: []
-
 hubs:
   default: gitlab
   gitlab:
     enabled: true
     web_base_url: https://gitlab.example.com
     api_base_url: https://gitlab.example.com/api/v4
-    private_token:
+    private_token: null
     clone_url_preference: http
     verify_ssl: true
     timeout_seconds: 20
-
 agents:
   default: opencode
   opencode:
     enabled: true
-    binary: opencode
-    list_models_command:
-      - models
-    review_command:
-      - run
-      - --model
-      - "{model}"
-      - "{prompt}"
-    prompt_template: /review {review_url}
-    model_list: []
+    list_models_command: opencode models
+    review_command: opencode run --model "{model}" "/review {review_url}"
+    models:
+    - opencode/big-pickle
+    - opencode/gpt-5-nano
+    - opencode/mimo-v2-omni-free
+    - opencode/mimo-v2-pro-free
+    - opencode/minimax-m2.5-free
+    - opencode/nemotron-3-super-free
     extra_env: {}

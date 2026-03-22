@@ -1,7 +1,7 @@
 {% extends "base_page.html" %}
 
 {% block page_title %}MR 代码检视中心{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260321-8">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260322-3">{% endblock %}
 {% block body_class %}review-page{% endblock %}
 
 {% block body %}
@@ -41,7 +41,10 @@
                             </div>
 
                             <div class="form-field">
-                                <label for="modelSelect">模型</label>
+                                <div class="field-label-row">
+                                    <label for="modelSelect">模型</label>
+                                    <button type="button" class="field-action-button" id="refreshModelsButton">刷新模型</button>
+                                </div>
                                 <select id="modelSelect" name="model_id" required></select>
                             </div>
 
@@ -122,7 +125,7 @@
                 <h2 id="detailModalTitle">检视详情</h2>
                 <div class="detail-modal-actions">
                     <span class="status-pill" id="detailStatusPill">-</span>
-                    <button type="button" class="secondary-button" id="detailRetryButton">重来当前任务</button>
+                    <button type="button" class="secondary-button" id="detailPrefillButton">重试</button>
                     <button type="button" class="secondary-button" id="detailCloseButton" data-close-detail-modal>关闭</button>
                 </div>
             </div>
@@ -208,5 +211,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="/static/js/review.js?v=20260321-7"></script>
+<script src="/static/js/review.js?v=20260322-3"></script>
 {% endblock %}

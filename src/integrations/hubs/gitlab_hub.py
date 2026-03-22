@@ -117,4 +117,4 @@ class GitLabReviewHub(ReviewHub):
 
 
 def register_gitlab_hub() -> None:
-    register_hub_factory("gitlab", GitLabReviewHub)
+    register_hub_factory(GitLabReviewHub.hub_id, GitLabReviewHub)

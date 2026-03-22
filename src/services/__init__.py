@@ -4,11 +4,10 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .plugin_loader import load_plugin_modules
     from .review_queue_worker import ReviewQueueWorker
     from .review_service import ReviewService
 
-__all__ = ["ReviewService", "ReviewQueueWorker", "load_plugin_modules"]
+__all__ = ["ReviewService", "ReviewQueueWorker"]
 
 
 def __getattr__(name: str):
@@ -20,8 +19,4 @@ def __getattr__(name: str):
         from .review_queue_worker import ReviewQueueWorker
 
         return ReviewQueueWorker
-    if name == "load_plugin_modules":
-        from .plugin_loader import load_plugin_modules
-
-        return load_plugin_modules
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

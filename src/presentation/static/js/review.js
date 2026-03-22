@@ -3,6 +3,7 @@
         meta: null,
         records: [],
         openDetailId: null,
+        openDetailRecord: null,
         refreshTimer: null,
         autoRefreshEnabled: false,
         page: 1,
@@ -20,6 +21,7 @@
         elements.hubSelect = document.getElementById('hubSelect');
         elements.agentSelect = document.getElementById('agentSelect');
         elements.modelSelect = document.getElementById('modelSelect');
+        elements.refreshModelsButton = document.getElementById('refreshModelsButton');
         elements.modelHint = document.getElementById('modelHint');
         elements.queueRefreshButton = document.getElementById('queueRefreshButton');
         elements.autoRefreshToggleButton = document.getElementById('autoRefreshToggleButton');
@@ -37,7 +39,7 @@
         elements.detailModal = document.getElementById('detailModal');
         elements.detailCloseButton = document.getElementById('detailCloseButton');
         elements.detailStatusPill = document.getElementById('detailStatusPill');
-        elements.detailRetryButton = document.getElementById('detailRetryButton');
+        elements.detailPrefillButton = document.getElementById('detailPrefillButton');
         elements.detailContent = document.getElementById('detailContent');
         elements.detailId = document.getElementById('detailId');
         elements.detailQueuePosition = document.getElementById('detailQueuePosition');
@@ -97,6 +99,7 @@
 
     function closeDetailModal() {
         state.openDetailId = null;
+        state.openDetailRecord = null;
         elements.detailModal.hidden = true;
         elements.detailContent.hidden = true;
         document.body.classList.remove('modal-open');
@@ -179,6 +182,7 @@
     function updateModelSuggestions() {
         const agentMeta = findAgentMeta(elements.agentSelect.value);
         const models = agentMeta ? agentMeta.models || [] : [];
+        const currentModelId = elements.modelSelect.value;
 
         elements.modelSelect.innerHTML = '';
 
@@ -198,19 +202,41 @@
         if (!agentMeta) {
             appendOption('', '等待加载模型列表', { disabled: true, selected: true });
             setModelHint('');
+            elements.refreshModelsButton.disabled = true;
             return;
         }
 
+        elements.refreshModelsButton.disabled = false;
+
         if (models.length === 0) {
             appendOption('', '暂无可用模型', { disabled: true, selected: true });
-            setModelHint(agentMeta.model_error || '当前 Agent 没有可选模型');
+            setModelHint(agentMeta.model_error || '当前 Agent 还没有配置模型，请点击刷新模型');
             return;
         }
 
         models.forEach(function(model) {
             appendOption(model.id, model.label || model.id);
         });
+        if (currentModelId && models.some(function(model) {
+            return model.id === currentModelId;
+        })) {
+            elements.modelSelect.value = currentModelId;
+        }
         setModelHint('');
+    }
+
+    function upsertAgentMeta(agentMeta) {
+        if (!state.meta || !agentMeta) {
+            return;
+        }
+        state.meta.agents = state.meta.agents
+            .filter(function(agent) {
+                return agent.id !== agentMeta.id;
+            })
+            .concat([agentMeta])
+            .sort(function(left, right) {
+                return String(left.name || left.id).localeCompare(String(right.name || right.id), 'zh-CN');
+            });
     }
 
     async function loadMeta() {
@@ -223,6 +249,39 @@
         state.meta = payload;
         populateHubSelect();
         populateAgentSelect();
+    }
+
+    async function refreshSelectedAgentModels() {
+        const agentId = String(elements.agentSelect.value || '').trim();
+        if (!agentId) {
+            showToast('请先选择 Agent', 'error');
+            return;
+        }
+
+        const originalText = elements.refreshModelsButton.textContent;
+        elements.refreshModelsButton.disabled = true;
+        elements.refreshModelsButton.classList.add('is-loading');
+        elements.refreshModelsButton.textContent = '刷新中...';
+
+        try {
+            const response = await fetch(`/api/agents/${encodeURIComponent(agentId)}/models/refresh`, {
+                method: 'POST'
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload.error || '刷新模型失败');
+            }
+
+            upsertAgentMeta(payload);
+            updateModelSuggestions();
+            showToast(`已刷新 ${payload.models ? payload.models.length : 0} 个模型，并写入配置文件`, 'success');
+        } catch (error) {
+            showToast(error.message || String(error), 'error');
+        } finally {
+            elements.refreshModelsButton.disabled = false;
+            elements.refreshModelsButton.classList.remove('is-loading');
+            elements.refreshModelsButton.textContent = originalText;
+        }
     }
 
     function syncAutoRefreshUi() {
@@ -343,7 +402,7 @@
                     <td>
                         <div class="record-actions">
                             <button type="button" class="table-action-button" data-view-review-id="${record.id}">查看详情</button>
-                            <button type="button" class="table-action-button" data-retry-review-id="${record.id}">重来</button>
+                            <button type="button" class="table-action-button" data-prefill-review-id="${record.id}">重试</button>
                         </div>
                     </td>
                 </tr>
@@ -372,9 +431,9 @@
 
     function renderDetail(detail) {
         state.openDetailId = detail.id;
+        state.openDetailRecord = detail;
         elements.detailStatusPill.className = `status-pill ${getStatusClass(detail)}`;
         elements.detailStatusPill.textContent = detail.status_label;
-        elements.detailRetryButton.disabled = !detail.can_retry;
         elements.detailContent.hidden = false;
 
         elements.detailId.textContent = `#${detail.id}`;
@@ -461,49 +520,36 @@
         }
     }
 
-    async function retryReview(reviewId, triggerButton) {
-        if (!Number.isFinite(reviewId)) {
+    function prefillReviewForm(record) {
+        if (!record || !record.mr_url) {
+            showToast('未找到可回填的 MR 地址', 'error');
             return;
         }
 
-        const button = triggerButton || null;
-        const originalText = button ? button.textContent : '';
-        if (button) {
-            button.disabled = true;
-            button.classList.add('is-loading');
-            button.textContent = '重来中...';
+        elements.mrUrlInput.value = record.mr_url;
+        if (!elements.detailModal.hidden) {
+            closeDetailModal();
         }
 
-        try {
-            const response = await fetch(`/api/reviews/${reviewId}/retry`, {
-                method: 'POST'
+        window.requestAnimationFrame(function() {
+            elements.mrUrlInput.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
             });
-            const result = await response.json();
-            if (!response.ok) {
-                throw new Error(result.error || '重来任务创建失败');
-            }
+            elements.mrUrlInput.focus();
+        });
 
-            showToast(`已基于任务 #${reviewId} 新建检视任务 #${result.id}`, 'success');
-            state.page = 1;
-            await refreshReviews();
-
-            if (elements.detailModal.hidden === false && state.openDetailId === reviewId) {
-                await loadDetail(result.id, true);
-            }
-        } catch (error) {
-            showToast(error.message || String(error), 'error');
-        } finally {
-            if (button) {
-                button.disabled = false;
-                button.classList.remove('is-loading');
-                button.textContent = originalText || '重来';
-            }
-        }
+        showToast('已回填 MR 地址，请重新选择 Agent 和模型后再发起检视', 'success');
     }
 
     function bindEvents() {
         elements.agentSelect.addEventListener('change', function() {
             updateModelSuggestions();
+        });
+        elements.refreshModelsButton.addEventListener('click', function() {
+            refreshSelectedAgentModels().catch(function(error) {
+                showToast(error.message || String(error), 'error');
+            });
         });
 
         elements.reviewForm.addEventListener('submit', submitReview);
@@ -583,22 +629,21 @@
                 return;
             }
 
-            const retryButton = event.target.closest('[data-retry-review-id]');
-            if (retryButton) {
-                const reviewId = Number(retryButton.getAttribute('data-retry-review-id'));
-                retryReview(reviewId, retryButton).catch(function(error) {
-                    showToast(error.message || String(error), 'error');
-                });
+            const prefillButton = event.target.closest('[data-prefill-review-id]');
+            if (prefillButton) {
+                const reviewId = Number(prefillButton.getAttribute('data-prefill-review-id'));
+                const record = state.records.find(function(item) {
+                    return Number(item.id) === reviewId;
+                }) || null;
+                prefillReviewForm(record);
             }
         });
 
-        elements.detailRetryButton.addEventListener('click', function() {
-            if (state.openDetailId == null) {
+        elements.detailPrefillButton.addEventListener('click', function() {
+            if (!state.openDetailRecord) {
                 return;
             }
-            retryReview(Number(state.openDetailId), elements.detailRetryButton).catch(function(error) {
-                showToast(error.message || String(error), 'error');
-            });
+            prefillReviewForm(state.openDetailRecord);
         });
 
         document.querySelectorAll('[data-close-detail-modal]').forEach(function(node) {

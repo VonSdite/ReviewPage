@@ -84,6 +84,13 @@
     gap: 8px;
 }
 
+.field-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
 .form-inline-row {
     display: grid;
     grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) minmax(240px, 1.2fr) auto;
@@ -136,6 +143,31 @@
 .field-hint {
     color: var(--text-muted);
     font-size: 12px;
+}
+
+.field-action-button {
+    min-height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+    transition: border-color var(--transition), background-color var(--transition), color var(--transition);
+}
+
+.field-action-button:hover,
+.field-action-button:focus-visible {
+    outline: none;
+    border-color: var(--primary);
+    color: var(--primary-strong);
+    background: var(--surface-hover);
+}
+
+.field-action-button.is-loading {
+    opacity: 0.72;
+    cursor: wait;
 }
 
 .form-actions {

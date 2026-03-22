@@ -24,7 +24,6 @@ class ConfigManagerTestCase(unittest.TestCase):
         self.assertEqual(manager.get_log_level(), "INFO")
         self.assertEqual(manager.get_workspace_temp_root(), str((root / "data" / "tmp" / "reviews").resolve()))
         self.assertEqual(manager.get_queue_poll_interval_seconds(), 2.0)
-        self.assertEqual(manager.get_plugin_modules(), [])
         self.assertEqual(manager.get_default_agent_id(), "opencode")
         self.assertEqual(manager.get_default_hub_id(), "gitlab")
 
@@ -48,6 +47,25 @@ class ConfigManagerTestCase(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "database.path must be a directory"):
                 manager.get_database_path()
+
+    def test_update_agent_models_persists_to_config(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_path = root / "config.yaml"
+            config_path.write_text(
+                "agents:\n  default: opencode\n  opencode:\n    enabled: true\n    models:\n      - stale/model\n",
+                encoding="utf-8",
+            )
+
+            manager = ConfigManager(config_path, root)
+            written = manager.update_agent_models("opencode", ["provider/model-a", "", "provider/model-a", "provider/model-b"])
+            reloaded = ConfigManager(config_path, root)
+
+        self.assertEqual(written, ["provider/model-a", "provider/model-b"])
+        self.assertEqual(
+            reloaded.get_agent_config("opencode").get("models"),
+            ["provider/model-a", "provider/model-b"],
+        )
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from ..domain.registry import get_registered_agent_factories, get_registered_hub
 from ..integrations import register_builtin_integrations
 from ..presentation import WebController, create_flask_app
 from ..repositories import ReviewRepository
-from ..services import ReviewQueueWorker, ReviewService, load_plugin_modules
+from ..services import ReviewQueueWorker, ReviewService
 from ..utils import create_connection_factory
 
 
@@ -89,11 +89,6 @@ class Application:
 
     def _setup_integrations(self) -> None:
         register_builtin_integrations()
-        load_plugin_modules(
-            self._config_manager.get_plugin_modules(),
-            root_path=self._root_path,
-            logger=self._logger,
-        )
 
         self._agents = {}
         for agent_id, factory in get_registered_agent_factories().items():

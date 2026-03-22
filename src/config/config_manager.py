@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import threading
 from typing import Any
 
 import yaml
@@ -17,14 +18,16 @@ class ConfigManager:
     def __init__(self, config_path: Path, root_path: Path):
         self._config_path = config_path.resolve()
         self._root_path = root_path.resolve()
+        self._lock = threading.RLock()
         self.reload()
 
     def reload(self) -> None:
-        with self._config_path.open("r", encoding="utf-8") as handle:
-            raw = yaml.safe_load(handle) or {}
-        if not isinstance(raw, dict):
-            raise ValueError("config root must be a mapping")
-        self._config = raw
+        with self._lock:
+            with self._config_path.open("r", encoding="utf-8") as handle:
+                raw = yaml.safe_load(handle) or {}
+            if not isinstance(raw, dict):
+                raise ValueError("config root must be a mapping")
+            self._config = raw
 
     def get_server_host(self) -> str:
         return str(self._get_section("server").get("host") or "0.0.0.0")
@@ -48,10 +51,6 @@ class ConfigManager:
     def get_queue_poll_interval_seconds(self) -> float:
         value = self._get_section("queue").get("poll_interval_seconds", 2)
         return max(float(value), 0.5)
-
-    def get_plugin_modules(self) -> list[str]:
-        modules = self._get_section("plugins").get("modules") or []
-        return [str(item).strip() for item in modules if str(item).strip()]
 
     def get_default_agent_id(self) -> str:
         return str(self._get_section("agents").get("default") or "opencode")
@@ -80,11 +79,53 @@ class ConfigManager:
     def get_raw_config(self) -> dict[str, Any]:
         return deepcopy(self._config)
 
+    def update_agent_models(self, agent_id: str, models: list[str]) -> list[str]:
+        normalized = self._normalize_model_ids(models)
+        with self._lock:
+            agents = self._ensure_section("agents")
+            agent_cfg = agents.setdefault(agent_id, {})
+            if not isinstance(agent_cfg, dict):
+                raise ValueError(f"agents.{agent_id} must be a mapping")
+            agent_cfg["models"] = normalized
+            agent_cfg.pop("model_list", None)
+            self._write_config()
+        return normalized
+
     def _get_section(self, name: str) -> dict[str, Any]:
         section = self._config.get(name) or {}
         if not isinstance(section, dict):
             raise ValueError(f"{name} must be a mapping")
         return section
+
+    def _ensure_section(self, name: str) -> dict[str, Any]:
+        section = self._config.get(name)
+        if section is None:
+            section = {}
+            self._config[name] = section
+        if not isinstance(section, dict):
+            raise ValueError(f"{name} must be a mapping")
+        return section
+
+    def _write_config(self) -> None:
+        with self._config_path.open("w", encoding="utf-8") as handle:
+            yaml.safe_dump(
+                self._config,
+                handle,
+                allow_unicode=True,
+                sort_keys=False,
+                default_flow_style=False,
+            )
+
+    def _normalize_model_ids(self, models: list[str]) -> list[str]:
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for item in models:
+            model_id = str(item or "").strip()
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            normalized.append(model_id)
+        return normalized
 
     def _resolve_database_dir(self, value: str | Path) -> Path:
         candidate = Path(value)
