@@ -150,6 +150,16 @@
         });
     }
 
+    function formatModelOptionLabel(model, defaultModelId) {
+        const baseLabel = String((model && (model.label || model.id)) || '').trim();
+        if (!baseLabel) {
+            return '';
+        }
+        return model && model.id === defaultModelId
+            ? `${baseLabel}（默认）`
+            : baseLabel;
+    }
+
     function syncDefaultModelButton(agentMeta) {
         const currentAgentMeta = agentMeta || findAgentMeta(elements.agentSelect.value);
         const selectedModelId = String(elements.modelSelect.value || '').trim();
@@ -238,7 +248,7 @@
         }
 
         models.forEach(function(model) {
-            appendOption(model.id, model.label || model.id);
+            appendOption(model.id, formatModelOptionLabel(model, defaultModelId));
         });
 
         const preferredModelId = [defaultModelId, currentModelId]
