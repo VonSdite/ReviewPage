@@ -47,7 +47,7 @@ class ReviewService:
         mr_url = str(payload.get("mr_url") or "").strip()
         hub_id = str(payload.get("hub_id") or self._config_manager.get_default_hub_id()).strip()
         agent_id = str(payload.get("agent_id") or self._config_manager.get_default_agent_id()).strip()
-        model_id = str(payload.get("model_id") or "").strip()
+        model_id = str(payload.get("model_id") or self._config_manager.get_agent_default_model_id(agent_id) or "").strip()
 
         if not mr_url:
             raise ValueError("MR 检视地址不能为空")
@@ -60,6 +60,9 @@ class ReviewService:
 
         agent = self._agents[agent_id]
         hub = self._hubs[hub_id]
+        available_model_ids = {item.model_id for item in agent.get_model_catalog().models}
+        if available_model_ids and model_id not in available_model_ids:
+            raise ValueError(f"模型不属于当前 Agent：{model_id}")
         if not hub.supports_url(mr_url):
             raise ValueError(f"所选 Hub 不支持该 MR 地址：{mr_url}")
 
@@ -116,9 +119,27 @@ class ReviewService:
             "id": agent.agent_id,
             "name": agent.agent_id,
             "models": [item.to_dict() for item in catalog.models],
+            "default_model_id": agent.get_default_model_id(),
             "model_source": catalog.source,
             "model_error": catalog.error,
         }
+
+    def set_agent_default_model(self, agent_id: str, model_id: str) -> dict[str, object]:
+        agent = self._agents.get(agent_id)
+        if agent is None:
+            raise ValueError(f"未注册或未启用的 Agent：{agent_id}")
+
+        normalized_model_id = str(model_id or "").strip()
+        if not normalized_model_id:
+            raise ValueError("默认模型不能为空")
+
+        catalog = agent.get_model_catalog()
+        valid_model_ids = {item.model_id for item in catalog.models}
+        if normalized_model_id not in valid_model_ids:
+            raise ValueError(f"默认模型不属于当前 Agent：{normalized_model_id}")
+
+        self._config_manager.update_agent_default_model(agent_id, normalized_model_id)
+        return agent.to_metadata()
 
     def reset_running_reviews(self) -> None:
         self._review_repository.reset_running_pending_reviews()
@@ -226,9 +247,9 @@ class ReviewService:
         if status == "pending" and runtime_state == "running":
             status_label = "执行中"
         elif status == "pending":
-            status_label = "未检视"
+            status_label = "待执行"
         elif status == "completed":
-            status_label = "已检视"
+            status_label = "成功"
         else:
             status_label = "失败"
 

@@ -10,10 +10,6 @@ workspace:
   temp_root: data/tmp/reviews
 queue:
   poll_interval_seconds: 2
-# command_shell:
-#   executable: D:/Git/bin/bash.exe
-#   args:
-#   - -lc
 hubs:
   default: gitlab
   gitlab:
@@ -45,3 +41,4 @@ agents:
     - volcengine/ark-code-latest
     - volcengine/kimi-k2.5
     extra_env: {}
+    default_model: proxy/volc_code/GLM-4.7

@@ -24,12 +24,16 @@ class ReviewAgent(ABC):
     def build_review_command(self, *, model: str, review_url: str, workspace_dir: str) -> ReviewCommandSpec:
         """构建单次检视任务命令。"""
 
+    def get_default_model_id(self) -> str | None:
+        return None
+
     def to_metadata(self) -> dict[str, object]:
         catalog = self.get_model_catalog()
         return {
             "id": self.agent_id,
             "name": self.agent_id,
             "models": [item.to_dict() for item in catalog.models],
+            "default_model_id": self.get_default_model_id(),
             "model_source": catalog.source,
             "model_error": catalog.error,
         }

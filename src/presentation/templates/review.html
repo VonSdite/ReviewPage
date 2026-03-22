@@ -1,7 +1,7 @@
 {% extends "base_page.html" %}
 
 {% block page_title %}MR 代码检视中心{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260322-3">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260322-4">{% endblock %}
 {% block body_class %}review-page{% endblock %}
 
 {% block body %}
@@ -43,7 +43,10 @@
                             <div class="form-field">
                                 <div class="field-label-row">
                                     <label for="modelSelect">模型</label>
-                                    <button type="button" class="field-action-button" id="refreshModelsButton">刷新模型</button>
+                                    <div class="field-label-actions">
+                                        <button type="button" class="field-action-button" id="saveDefaultModelButton">设为默认</button>
+                                        <button type="button" class="field-action-button" id="refreshModelsButton">刷新模型</button>
+                                    </div>
                                 </div>
                                 <select id="modelSelect" name="model_id" required></select>
                             </div>
@@ -72,18 +75,17 @@
                         <table class="records-table">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
-                                    <th>MR</th>
-                                    <th>Hub</th>
-                                    <th>Agent / 模型</th>
-                                    <th>状态</th>
-                                    <th>时间</th>
-                                    <th>操作</th>
+                                    <th class="col-mr">MR</th>
+                                    <th class="col-hub">Hub</th>
+                                    <th class="col-agent">Agent / 模型</th>
+                                    <th class="col-status">状态</th>
+                                    <th class="col-time">时间</th>
+                                    <th class="col-actions">操作</th>
                                 </tr>
                             </thead>
                             <tbody id="recordsTableBody">
                                 <tr>
-                                    <td colspan="7" class="empty-row">正在加载检视记录...</td>
+                                    <td colspan="6" class="empty-row">正在加载检视记录...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -211,5 +213,5 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="/static/js/review.js?v=20260322-3"></script>
+<script src="/static/js/review.js?v=20260322-4"></script>
 {% endblock %}

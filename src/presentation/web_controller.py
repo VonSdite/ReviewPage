@@ -25,6 +25,7 @@ class WebController:
         self._app.route("/")(self.index)
         self._app.route("/api/meta", methods=["GET"])(self.get_meta)
         self._app.route("/api/agents/<string:agent_id>/models/refresh", methods=["POST"])(self.refresh_agent_models)
+        self._app.route("/api/agents/<string:agent_id>/default-model", methods=["POST"])(self.set_agent_default_model)
         self._app.route("/api/reviews", methods=["GET"])(self.list_reviews)
         self._app.route("/api/reviews", methods=["POST"])(self.create_review)
         self._app.route("/api/reviews/<int:review_id>", methods=["GET"])(self.get_review_detail)
@@ -46,6 +47,19 @@ class WebController:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             self._logger.exception("Failed to refresh agent models")
+            return jsonify({"error": str(exc)}), 500
+
+    def set_agent_default_model(self, agent_id: str) -> Response:
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return jsonify({"error": "request body must be an object"}), 400
+
+        try:
+            return jsonify(self._review_service.set_agent_default_model(agent_id, str(payload.get("model_id") or "")))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            self._logger.exception("Failed to set agent default model")
             return jsonify({"error": str(exc)}), 500
 
     def list_reviews(self) -> Response:

@@ -21,6 +21,7 @@
         elements.hubSelect = document.getElementById('hubSelect');
         elements.agentSelect = document.getElementById('agentSelect');
         elements.modelSelect = document.getElementById('modelSelect');
+        elements.saveDefaultModelButton = document.getElementById('saveDefaultModelButton');
         elements.refreshModelsButton = document.getElementById('refreshModelsButton');
         elements.modelHint = document.getElementById('modelHint');
         elements.queueRefreshButton = document.getElementById('queueRefreshButton');
@@ -140,6 +141,28 @@
         elements.modelHint.hidden = !text;
     }
 
+    function isAvailableModel(agentMeta, modelId) {
+        if (!agentMeta || !modelId) {
+            return false;
+        }
+        return (agentMeta.models || []).some(function(model) {
+            return model.id === modelId;
+        });
+    }
+
+    function syncDefaultModelButton(agentMeta) {
+        const currentAgentMeta = agentMeta || findAgentMeta(elements.agentSelect.value);
+        const selectedModelId = String(elements.modelSelect.value || '').trim();
+        const canSaveDefault = Boolean(currentAgentMeta && isAvailableModel(currentAgentMeta, selectedModelId));
+        const defaultModelId = String((currentAgentMeta && currentAgentMeta.default_model_id) || '').trim();
+
+        elements.refreshModelsButton.disabled = !currentAgentMeta;
+        elements.saveDefaultModelButton.disabled = !canSaveDefault;
+        elements.saveDefaultModelButton.textContent = canSaveDefault && selectedModelId === defaultModelId
+            ? '已设默认'
+            : '设为默认';
+    }
+
     function populateHubSelect() {
         const defaults = state.meta.defaults || {};
         elements.hubSelect.innerHTML = '';
@@ -183,6 +206,7 @@
         const agentMeta = findAgentMeta(elements.agentSelect.value);
         const models = agentMeta ? agentMeta.models || [] : [];
         const currentModelId = elements.modelSelect.value;
+        const defaultModelId = String((agentMeta && agentMeta.default_model_id) || '').trim();
 
         elements.modelSelect.innerHTML = '';
 
@@ -202,27 +226,29 @@
         if (!agentMeta) {
             appendOption('', '等待加载模型列表', { disabled: true, selected: true });
             setModelHint('');
-            elements.refreshModelsButton.disabled = true;
+            syncDefaultModelButton(null);
             return;
         }
-
-        elements.refreshModelsButton.disabled = false;
 
         if (models.length === 0) {
             appendOption('', '暂无可用模型', { disabled: true, selected: true });
             setModelHint(agentMeta.model_error || '当前 Agent 还没有配置模型，请点击刷新模型');
+            syncDefaultModelButton(agentMeta);
             return;
         }
 
         models.forEach(function(model) {
             appendOption(model.id, model.label || model.id);
         });
-        if (currentModelId && models.some(function(model) {
-            return model.id === currentModelId;
-        })) {
-            elements.modelSelect.value = currentModelId;
-        }
+
+        const preferredModelId = [defaultModelId, currentModelId]
+            .find(function(modelId) {
+                return isAvailableModel(agentMeta, modelId);
+            }) || models[0].id;
+
+        elements.modelSelect.value = preferredModelId;
         setModelHint('');
+        syncDefaultModelButton(agentMeta);
     }
 
     function upsertAgentMeta(agentMeta) {
@@ -281,6 +307,50 @@
             elements.refreshModelsButton.disabled = false;
             elements.refreshModelsButton.classList.remove('is-loading');
             elements.refreshModelsButton.textContent = originalText;
+        }
+    }
+
+    async function saveSelectedAgentDefaultModel() {
+        const agentId = String(elements.agentSelect.value || '').trim();
+        const modelId = String(elements.modelSelect.value || '').trim();
+        if (!agentId) {
+            showToast('请先选择 Agent', 'error');
+            return;
+        }
+        if (!modelId) {
+            showToast('请先选择模型', 'error');
+            return;
+        }
+
+        const originalText = elements.saveDefaultModelButton.textContent;
+        elements.saveDefaultModelButton.disabled = true;
+        elements.saveDefaultModelButton.classList.add('is-loading');
+        elements.saveDefaultModelButton.textContent = '保存中...';
+
+        try {
+            const response = await fetch(`/api/agents/${encodeURIComponent(agentId)}/default-model`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ model_id: modelId })
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload.error || '保存默认模型失败');
+            }
+
+            upsertAgentMeta(payload);
+            updateModelSuggestions();
+            showToast('已保存默认模型', 'success');
+        } catch (error) {
+            showToast(error.message || String(error), 'error');
+        } finally {
+            elements.saveDefaultModelButton.classList.remove('is-loading');
+            if (!elements.saveDefaultModelButton.disabled) {
+                elements.saveDefaultModelButton.textContent = originalText;
+            }
+            syncDefaultModelButton();
         }
     }
 
@@ -365,41 +435,36 @@
         state.records = records;
 
         if (!records.length) {
-            elements.recordsTableBody.innerHTML = '<tr><td colspan="7" class="empty-row">还没有检视记录，先发起一个任务吧。</td></tr>';
+            elements.recordsTableBody.innerHTML = '<tr><td colspan="6" class="empty-row">还没有检视记录，先发起一个任务吧。</td></tr>';
             return;
         }
 
         elements.recordsTableBody.innerHTML = records.map(function(record) {
             const mrTitle = record.title || record.mr_url;
-            const queueHint = record.runtime_state === 'queued' && record.queue_position
-                ? `排队第 ${record.queue_position} 位`
-                : (record.runtime_state === 'running' ? '后台执行中' : '已结束');
 
             return `
                 <tr>
-                    <td>#${record.id}</td>
-                    <td>
+                    <td class="col-mr">
                         <div class="record-meta">
                             <div class="record-title">${escapeHtml(mrTitle)}</div>
                             <a class="record-link" href="${escapeHtml(record.mr_url)}" target="_blank" rel="noreferrer">${escapeHtml(record.mr_url)}</a>
                         </div>
                     </td>
-                    <td>${escapeHtml(record.hub_id)}</td>
-                    <td>
+                    <td class="col-hub">${escapeHtml(record.hub_id)}</td>
+                    <td class="col-agent">
                         <div class="record-meta">
                             <div class="record-title">${escapeHtml(record.agent_id)}</div>
                             <div class="record-subtitle">${escapeHtml(record.model_id)}</div>
                         </div>
                     </td>
-                    <td>
+                    <td class="col-status">
                         ${renderStatusPill(record)}
-                        <div class="record-subtitle">${escapeHtml(queueHint)}</div>
                     </td>
-                    <td>
+                    <td class="col-time">
                         <div class="record-time">创建：${escapeHtml(formatDate(record.created_at))}</div>
                         <div class="record-time">开始：${escapeHtml(formatDate(record.started_at))}</div>
                     </td>
-                    <td>
+                    <td class="col-actions">
                         <div class="record-actions">
                             <button type="button" class="table-action-button" data-view-review-id="${record.id}">查看详情</button>
                             <button type="button" class="table-action-button" data-prefill-review-id="${record.id}">重试</button>
@@ -506,7 +571,7 @@
                 throw new Error(result.error || '创建检视任务失败');
             }
 
-            showToast(`检视任务 #${result.id} 已加入队列`, 'success');
+            showToast('检视任务已加入队列', 'success');
             elements.reviewForm.reset();
             populateHubSelect();
             populateAgentSelect();
@@ -545,6 +610,14 @@
     function bindEvents() {
         elements.agentSelect.addEventListener('change', function() {
             updateModelSuggestions();
+        });
+        elements.modelSelect.addEventListener('change', function() {
+            syncDefaultModelButton();
+        });
+        elements.saveDefaultModelButton.addEventListener('click', function() {
+            saveSelectedAgentDefaultModel().catch(function(error) {
+                showToast(error.message || String(error), 'error');
+            });
         });
         elements.refreshModelsButton.addEventListener('click', function() {
             refreshSelectedAgentModels().catch(function(error) {

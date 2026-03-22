@@ -85,6 +85,9 @@ class OpencodeReviewAgent(ReviewAgent):
         )
         return ReviewCommandSpec(argv=argv, env=dict(self._extra_env))
 
+    def get_default_model_id(self) -> str | None:
+        return self._ctx.config_manager.get_agent_default_model_id(self.agent_id)
+
     def _load_config_models(self) -> list[str]:
         agent_config = self._ctx.config_manager.get_agent_config(self.agent_id)
         raw_models = agent_config.get("models") or []

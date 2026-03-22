@@ -80,6 +80,7 @@ http://127.0.0.1:8091
 - `agents.opencode`
   - `list_models_command`: 完整列模型命令字符串，例如 `opencode models`
   - `review_command`: 完整检视命令字符串，例如 `opencode run --model "{model}" "/review {review_url}"`
+  - `default_model`: 当前 Agent 的默认模型，可在前端直接设置并自动写回配置
   - `models`: 当前用于页面展示的模型列表，刷新模型后会自动更新这里
 - `agents.*` / `hubs.*`
   - 以配置 key 作为唯一标识

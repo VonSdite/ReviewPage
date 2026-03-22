@@ -27,6 +27,9 @@ class _FakeConfigManager:
         self._last_agent_id = agent_id
         return dict(self._agent_config)
 
+    def get_agent_default_model_id(self, agent_id):
+        return str(self._agent_config.get("default_model") or "").strip() or None
+
     def get_command_shell_config(self):
         return deepcopy(self._command_shell_config)
 
@@ -59,6 +62,11 @@ class OpencodeAgentTestCase(unittest.TestCase):
 
         self.assertEqual(catalog.source, "config")
         self.assertEqual([item.model_id for item in catalog.models], ["configured/model"])
+
+    def test_get_default_model_id_reads_from_config(self):
+        agent = OpencodeReviewAgent(_FakeCtx(agent_overrides={"default_model": "configured/model"}))
+
+        self.assertEqual(agent.get_default_model_id(), "configured/model")
 
     def test_refresh_model_catalog_updates_config(self):
         ctx = _FakeCtx()

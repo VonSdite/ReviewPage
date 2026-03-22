@@ -78,6 +78,10 @@ class ConfigManager:
             raise ValueError(f"agents.{agent_id} must be a mapping")
         return deepcopy(agent_cfg)
 
+    def get_agent_default_model_id(self, agent_id: str) -> str | None:
+        model_id = str(self.get_agent_config(agent_id).get("default_model") or "").strip()
+        return model_id or None
+
     def get_hub_config(self, hub_id: str) -> dict[str, Any]:
         hub_cfg = self._get_section("hubs").get(hub_id) or {}
         if not isinstance(hub_cfg, dict):
@@ -95,7 +99,24 @@ class ConfigManager:
             if not isinstance(agent_cfg, dict):
                 raise ValueError(f"agents.{agent_id} must be a mapping")
             agent_cfg["models"] = normalized
+            current_default = str(agent_cfg.get("default_model") or "").strip()
+            if current_default and current_default not in normalized:
+                agent_cfg.pop("default_model", None)
             agent_cfg.pop("model_list", None)
+            self._write_config()
+        return normalized
+
+    def update_agent_default_model(self, agent_id: str, model_id: str | None) -> str | None:
+        normalized = str(model_id or "").strip() or None
+        with self._lock:
+            agents = self._ensure_section("agents")
+            agent_cfg = agents.setdefault(agent_id, {})
+            if not isinstance(agent_cfg, dict):
+                raise ValueError(f"agents.{agent_id} must be a mapping")
+            if normalized is None:
+                agent_cfg.pop("default_model", None)
+            else:
+                agent_cfg["default_model"] = normalized
             self._write_config()
         return normalized
 

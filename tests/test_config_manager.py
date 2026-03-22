@@ -27,6 +27,7 @@ class ConfigManagerTestCase(unittest.TestCase):
         self.assertIsNone(manager.get_command_shell_config())
         self.assertEqual(manager.get_default_agent_id(), "opencode")
         self.assertEqual(manager.get_default_hub_id(), "gitlab")
+        self.assertIsNone(manager.get_agent_default_model_id("opencode"))
 
     def test_database_path_accepts_directory(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -67,6 +68,37 @@ class ConfigManagerTestCase(unittest.TestCase):
             reloaded.get_agent_config("opencode").get("models"),
             ["provider/model-a", "provider/model-b"],
         )
+
+    def test_update_agent_default_model_persists_to_config(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_path = root / "config.yaml"
+            config_path.write_text(
+                "agents:\n  opencode:\n    enabled: true\n    models:\n      - provider/model-a\n",
+                encoding="utf-8",
+            )
+
+            manager = ConfigManager(config_path, root)
+            written = manager.update_agent_default_model("opencode", "provider/model-a")
+            reloaded = ConfigManager(config_path, root)
+
+        self.assertEqual(written, "provider/model-a")
+        self.assertEqual(reloaded.get_agent_default_model_id("opencode"), "provider/model-a")
+
+    def test_update_agent_models_clears_invalid_default_model(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_path = root / "config.yaml"
+            config_path.write_text(
+                "agents:\n  opencode:\n    enabled: true\n    default_model: stale/model\n    models:\n      - stale/model\n",
+                encoding="utf-8",
+            )
+
+            manager = ConfigManager(config_path, root)
+            manager.update_agent_models("opencode", ["provider/model-a"])
+            reloaded = ConfigManager(config_path, root)
+
+        self.assertIsNone(reloaded.get_agent_default_model_id("opencode"))
 
     def test_get_command_shell_config_reads_top_level_mapping(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -91,6 +91,13 @@
     gap: 10px;
 }
 
+.field-label-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .form-inline-row {
     display: grid;
     grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) minmax(240px, 1.2fr) auto;
@@ -170,6 +177,11 @@
     cursor: wait;
 }
 
+.field-action-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .form-actions {
     display: flex;
     gap: 12px;
@@ -202,7 +214,7 @@
 
 .table-wrap {
     max-width: 100%;
-    overflow: hidden;
+    overflow: auto;
     border: 1px solid var(--line);
     border-radius: 18px;
     background: var(--surface-soft);
@@ -211,8 +223,8 @@
 .records-table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed;
-    min-width: 0;
+    table-layout: auto;
+    min-width: 1120px;
 }
 
 .records-table th,
@@ -274,9 +286,9 @@
     display: block;
     color: var(--primary-strong);
     text-decoration: none;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .record-link:hover {
@@ -572,28 +584,19 @@
     line-height: 1.7;
 }
 
-.records-table th:nth-child(1),
-.records-table td:nth-child(1) {
-    width: 74px;
-}
-
-.records-table th:nth-child(3),
-.records-table td:nth-child(3) {
+.records-table .col-hub {
     width: 140px;
 }
 
-.records-table th:nth-child(5),
-.records-table td:nth-child(5) {
-    width: 130px;
+.records-table .col-status {
+    width: 140px;
 }
 
-.records-table th:nth-child(6),
-.records-table td:nth-child(6) {
-    width: 170px;
+.records-table .col-time {
+    width: 260px;
 }
 
-.records-table th:nth-child(7),
-.records-table td:nth-child(7) {
+.records-table .col-actions {
     width: 180px;
 }
 
@@ -648,6 +651,11 @@ body.review-page.modal-open {
     .panel-card,
     .metric-card {
         padding: 18px;
+    }
+
+    .field-label-row {
+        align-items: flex-start;
+        flex-direction: column;
     }
 
     .table-footer {

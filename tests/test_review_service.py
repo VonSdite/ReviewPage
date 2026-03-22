@@ -16,6 +16,7 @@ from src.utils import create_connection_factory
 class _FakeConfigManager:
     def __init__(self, temp_root="/tmp/review-service-tests"):
         self._temp_root = temp_root
+        self.default_model_by_agent = {}
 
     def get_default_agent_id(self):
         return "opencode"
@@ -26,8 +27,14 @@ class _FakeConfigManager:
     def get_workspace_temp_root(self):
         return self._temp_root
 
+    def get_agent_default_model_id(self, agent_id):
+        return self.default_model_by_agent.get(agent_id)
+
     def update_agent_models(self, agent_id, models):
         self.updated_models = (agent_id, list(models))
+
+    def update_agent_default_model(self, agent_id, model_id):
+        self.default_model_by_agent[agent_id] = model_id
 
 
 class _FakeCtx:
@@ -41,6 +48,9 @@ class _FakeAgent:
 
     def get_model_catalog(self):
         return AgentModelCatalog(models=[ModelChoice(model_id="provider/model-a")], source="test")
+
+    def get_default_model_id(self):
+        return "provider/model-a"
 
     def build_review_command(self, *, model, review_url, workspace_dir):
         return ReviewCommandSpec(argv=["echo", model, review_url, workspace_dir], env={})
@@ -56,6 +66,7 @@ class _FakeAgent:
             "id": self.agent_id,
             "name": self.agent_id,
             "models": [{"id": "provider/model-a", "label": "provider/model-a"}],
+            "default_model_id": "provider/model-a",
             "model_source": "test",
             "model_error": None,
         }
@@ -174,6 +185,45 @@ class ReviewServiceTestCase(unittest.TestCase):
             ["provider/model-a", "provider/model-b"],
         )
         self.assertEqual(metadata["model_source"], "config")
+        self.assertEqual(metadata["default_model_id"], "provider/model-a")
+
+    def test_create_review_uses_agent_default_model_when_payload_omits_model(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repository = ReviewRepository(create_connection_factory(Path(tmpdir) / "review.db"))
+            ctx = _FakeCtx()
+            ctx.config_manager.default_model_by_agent["opencode"] = "provider/model-a"
+            service = ReviewService(
+                ctx,
+                review_repository=repository,
+                agents={"opencode": _FakeAgent()},
+                hubs={"gitlab": _FakeHub()},
+            )
+
+            created = service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/22",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                }
+            )
+
+        self.assertEqual(created["model_id"], "provider/model-a")
+
+    def test_set_agent_default_model_persists_and_returns_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repository = ReviewRepository(create_connection_factory(Path(tmpdir) / "review.db"))
+            ctx = _FakeCtx()
+            service = ReviewService(
+                ctx,
+                review_repository=repository,
+                agents={"opencode": _FakeAgent()},
+                hubs={"gitlab": _FakeHub()},
+            )
+
+            metadata = service.set_agent_default_model("opencode", "provider/model-a")
+
+        self.assertEqual(ctx.config_manager.default_model_by_agent["opencode"], "provider/model-a")
+        self.assertEqual(metadata["default_model_id"], "provider/model-a")
 
 
 if __name__ == "__main__":
