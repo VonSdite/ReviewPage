@@ -24,6 +24,7 @@ class ConfigManagerTestCase(unittest.TestCase):
         self.assertEqual(manager.get_log_level(), "INFO")
         self.assertEqual(manager.get_workspace_temp_root(), str((root / "data" / "tmp" / "reviews").resolve()))
         self.assertEqual(manager.get_queue_poll_interval_seconds(), 2.0)
+        self.assertIsNone(manager.get_command_shell_config())
         self.assertEqual(manager.get_default_agent_id(), "opencode")
         self.assertEqual(manager.get_default_hub_id(), "gitlab")
 
@@ -65,6 +66,25 @@ class ConfigManagerTestCase(unittest.TestCase):
         self.assertEqual(
             reloaded.get_agent_config("opencode").get("models"),
             ["provider/model-a", "provider/model-b"],
+        )
+
+    def test_get_command_shell_config_reads_top_level_mapping(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_path = root / "config.yaml"
+            config_path.write_text(
+                "command_shell:\n  executable: C:/Program Files/Git/bin/bash.exe\n  args:\n    - -lc\n",
+                encoding="utf-8",
+            )
+
+            manager = ConfigManager(config_path, root)
+
+        self.assertEqual(
+            manager.get_command_shell_config(),
+            {
+                "executable": "C:/Program Files/Git/bin/bash.exe",
+                "args": ["-lc"],
+            },
         )
 
 

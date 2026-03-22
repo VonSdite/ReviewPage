@@ -52,6 +52,14 @@ class ConfigManager:
         value = self._get_section("queue").get("poll_interval_seconds", 2)
         return max(float(value), 0.5)
 
+    def get_command_shell_config(self) -> Any:
+        value = self._config.get("command_shell")
+        if value is None:
+            return None
+        if not isinstance(value, (str, dict)):
+            raise ValueError("command_shell must be a string or mapping")
+        return deepcopy(value)
+
     def get_default_agent_id(self) -> str:
         return str(self._get_section("agents").get("default") or "opencode")
 

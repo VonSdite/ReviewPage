@@ -9,6 +9,7 @@ import shlex
 import subprocess
 
 from ...domain import AgentModelCatalog, ModelChoice, ReviewAgent, ReviewCommandSpec, register_agent_factory
+from ...utils import resolve_command_argv
 
 
 class OpencodeReviewAgent(ReviewAgent):
@@ -22,6 +23,8 @@ class OpencodeReviewAgent(ReviewAgent):
         self._review_command = str(
             self._config.get("review_command") or 'opencode run --model "{model}" "/review {review_url}"'
         ).strip()
+        global_command_shell = ctx.config_manager.get_command_shell_config()
+        self._command_shell = self._parse_command_shell(global_command_shell or self._config.get("command_shell"))
         self._extra_env = {str(k): str(v) for k, v in (self._config.get("extra_env") or {}).items()}
 
     def get_model_catalog(self) -> AgentModelCatalog:
@@ -31,10 +34,10 @@ class OpencodeReviewAgent(ReviewAgent):
         return AgentModelCatalog(models=[ModelChoice(model_id=item) for item in models], source="config")
 
     def refresh_model_catalog(self) -> AgentModelCatalog:
-        argv = self._parse_command_string(self._list_models_command, command_name="list_models_command")
+        argv = self._build_command_argv(self._list_models_command, command_name="list_models_command")
         try:
             completed = subprocess.run(
-                argv,
+                resolve_command_argv(argv),
                 cwd=str(self._ctx.root_path),
                 capture_output=True,
                 text=True,
@@ -73,7 +76,7 @@ class OpencodeReviewAgent(ReviewAgent):
         return self.get_model_catalog()
 
     def build_review_command(self, *, model: str, review_url: str, workspace_dir: str) -> ReviewCommandSpec:
-        argv = self._parse_command_string(
+        argv = self._build_command_argv(
             self._review_command,
             command_name="review_command",
             model=model,
@@ -116,6 +119,47 @@ class OpencodeReviewAgent(ReviewAgent):
         if not argv:
             raise ValueError(f"{command_name} 不能为空")
         return argv
+
+    def _build_command_argv(self, template: str, *, command_name: str, **values: str) -> list[str]:
+        argv = self._parse_command_string(template, command_name=command_name, **values)
+        if not self._command_shell:
+            return argv
+
+        return [
+            self._command_shell["executable"],
+            *self._command_shell["args"],
+            shlex.join(argv),
+        ]
+
+    def _parse_command_shell(self, raw_shell: object) -> dict[str, object] | None:
+        if raw_shell in (None, "", {}):
+            return None
+
+        if isinstance(raw_shell, str):
+            executable = raw_shell.strip()
+            if not executable:
+                return None
+            return {"executable": executable, "args": ["-lc"]}
+
+        if not isinstance(raw_shell, dict):
+            raise ValueError("command_shell must be a string or mapping")
+
+        executable = str(raw_shell.get("executable") or "").strip()
+        if not executable:
+            raise ValueError("command_shell.executable cannot be empty")
+
+        raw_args = raw_shell.get("args")
+        if raw_args is None:
+            args = ["-lc"]
+        elif not isinstance(raw_args, list):
+            raise ValueError("command_shell.args must be a list")
+        else:
+            args = [str(item).strip() for item in raw_args if str(item or "").strip()]
+
+        if not args:
+            args = ["-lc"]
+
+        return {"executable": executable, "args": args}
 
     def _build_subprocess_env(self) -> dict[str, str]:
         env = os.environ.copy()

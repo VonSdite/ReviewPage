@@ -1,5 +1,5 @@
 server:
-  host: 0.0.0.0
+  host: 127.0.0.1
   port: 8091
 database:
   path: data
@@ -10,6 +10,10 @@ workspace:
   temp_root: data/tmp/reviews
 queue:
   poll_interval_seconds: 2
+# command_shell:
+#   executable: D:/Git/bin/bash.exe
+#   args:
+#   - -lc
 hubs:
   default: gitlab
   gitlab:
@@ -29,8 +33,15 @@ agents:
     models:
     - opencode/big-pickle
     - opencode/gpt-5-nano
-    - opencode/mimo-v2-omni-free
-    - opencode/mimo-v2-pro-free
+    - opencode/mimo-v2-flash-free
     - opencode/minimax-m2.5-free
     - opencode/nemotron-3-super-free
+    - proxy/volc_code/DeepSeek-V3.2
+    - proxy/volc_code/Doubao-Seed-2.0-Code
+    - proxy/volc_code/Doubao-Seed-2.0-pro
+    - proxy/volc_code/GLM-4.7
+    - proxy/volc_code/kimi-k2.5
+    - proxy/volc_code/MiniMax-M2.5
+    - volcengine/ark-code-latest
+    - volcengine/kimi-k2.5
     extra_env: {}

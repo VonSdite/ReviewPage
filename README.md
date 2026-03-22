@@ -74,6 +74,9 @@ http://127.0.0.1:8091
   - `api_base_url`: GitLab API 地址前缀
   - `private_token`: 访问私有项目时建议配置
   - `clone_url_preference`: `http` 或 `ssh`
+- `command_shell`
+  - 为所有 Agent 命令统一指定外层 shell
+  - 适合 Windows 上强制走 Git Bash，例如 `C:/Program Files/Git/bin/bash.exe` + `-lc`
 - `agents.opencode`
   - `list_models_command`: 完整列模型命令字符串，例如 `opencode models`
   - `review_command`: 完整检视命令字符串，例如 `opencode run --model "{model}" "/review {review_url}"`

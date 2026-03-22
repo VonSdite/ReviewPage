@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,24 @@ def format_command(argv: list[str]) -> str:
     return shlex.join(argv)
 
 
+def resolve_command_argv(argv: list[str]) -> list[str]:
+    if not argv:
+        return []
+
+    executable = str(argv[0] or "")
+    if not executable:
+        return list(argv)
+
+    if os.path.sep in executable or (os.path.altsep and os.path.altsep in executable):
+        return list(argv)
+
+    resolved = shutil.which(executable)
+    if not resolved:
+        return list(argv)
+
+    return [resolved, *argv[1:]]
+
+
 def stream_command(
     argv: list[str],
     *,
@@ -33,9 +52,11 @@ def stream_command(
     if env:
         merged_env.update(env)
 
+    resolved_argv = resolve_command_argv(argv)
+
     try:
         process = subprocess.Popen(
-            argv,
+            resolved_argv,
             cwd=str(cwd),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
