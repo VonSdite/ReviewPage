@@ -11,8 +11,7 @@ from pathlib import Path
 
 from .app_context import AppContext
 from ..config import ConfigManager
-from ..domain.registry import get_registered_agent_factories, get_registered_hub_factories
-from ..integrations import register_builtin_integrations
+from ..integrations import build_configured_agents, build_configured_hubs, register_builtin_integrations
 from ..presentation import WebController, create_flask_app
 from ..repositories import ReviewRepository
 from ..services import ReviewQueueWorker, ReviewService
@@ -90,17 +89,8 @@ class Application:
     def _setup_integrations(self) -> None:
         register_builtin_integrations()
 
-        self._agents = {}
-        for agent_id, factory in get_registered_agent_factories().items():
-            if not self._config_manager.is_agent_enabled(agent_id):
-                continue
-            self._agents[agent_id] = factory(self._ctx)
-
-        self._hubs = {}
-        for hub_id, factory in get_registered_hub_factories().items():
-            if not self._config_manager.is_hub_enabled(hub_id):
-                continue
-            self._hubs[hub_id] = factory(self._ctx)
+        self._agents = build_configured_agents(self._ctx)
+        self._hubs = build_configured_hubs(self._ctx)
 
         self._logger.info(
             "Registered integrations loaded: agents=%s hubs=%s",

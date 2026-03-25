@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.utils.process import decode_command_output, resolve_command_argv, stream_command
+from src.utils.process import (
+    decode_command_output,
+    resolve_command_argv,
+    stream_command,
+    strip_terminal_control_sequences,
+)
 
 
 class ProcessTestCase(unittest.TestCase):
@@ -28,17 +33,22 @@ class ProcessTestCase(unittest.TestCase):
         with patch("src.utils.process.locale.getpreferredencoding") as mocked_getpreferredencoding:
             mocked_getpreferredencoding.return_value = "gbk"
 
-            decoded = decode_command_output("build ✓ maas-glm-4.7".encode("utf-8"))
+            decoded = decode_command_output("build \u2713 maas-glm-4.7".encode("utf-8"))
 
-        self.assertEqual(decoded, "build ✓ maas-glm-4.7")
+        self.assertEqual(decoded, "build \u2713 maas-glm-4.7")
 
     def test_decode_command_output_falls_back_to_system_encoding(self):
         with patch("src.utils.process.locale.getpreferredencoding") as mocked_getpreferredencoding:
-            mocked_getpreferredencoding.return_value = "gbk"
+            mocked_getpreferredencoding.return_value = "cp1252"
 
-            decoded = decode_command_output("中文输出".encode("gbk"))
+            decoded = decode_command_output("caf\u00e9".encode("cp1252"))
 
-        self.assertEqual(decoded, "中文输出")
+        self.assertEqual(decoded, "caf\u00e9")
+
+    def test_strip_terminal_control_sequences_removes_ansi_and_osc_sequences(self):
+        value = "\x1b[32mbuild\x1b[0m \x1b]8;;https://example.com\x07link\x1b]8;;\x07"
+
+        self.assertEqual(strip_terminal_control_sequences(value), "build link")
 
     def test_stream_command_uses_resolved_executable(self):
         process = MagicMock()
@@ -60,6 +70,24 @@ class ProcessTestCase(unittest.TestCase):
             ["C:/Users/Von/AppData/Roaming/npm/opencode.CMD", "models"],
         )
         self.assertEqual(mocked_popen.call_args.kwargs["bufsize"], -1)
+
+    def test_stream_command_strips_terminal_control_sequences(self):
+        process = MagicMock()
+        process.stdout = iter(
+            [
+                b"\x1b[0m\n",
+                b"\x1b[32mbuild \xe2\x9c\x93\x1b[0m\n",
+            ]
+        )
+        process.wait.return_value = 0
+
+        with patch("src.utils.process.subprocess.Popen") as mocked_popen:
+            mocked_popen.return_value = process
+
+            result = stream_command(["opencode", "models"], cwd=Path("."))
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.output, "build \u2713")
 
 
 if __name__ == "__main__":

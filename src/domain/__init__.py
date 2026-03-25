@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from .registry import (
-    get_registered_agent_factories,
-    get_registered_hub_factories,
-    register_agent_factory,
-    register_hub_factory,
-)
+from .registry import get_registered_hub_types, register_hub_type
 from .review_agent import ReviewAgent
 from .review_hub import ReviewHub
 from .review_models import AgentModelCatalog, MergeRequestTarget, ModelChoice, ReviewCommandSpec
@@ -18,8 +13,6 @@ __all__ = [
     "ModelChoice",
     "AgentModelCatalog",
     "MergeRequestTarget",
-    "register_agent_factory",
-    "register_hub_factory",
-    "get_registered_agent_factories",
-    "get_registered_hub_factories",
+    "register_hub_type",
+    "get_registered_hub_types",
 ]

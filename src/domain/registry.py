@@ -7,28 +7,13 @@ from __future__ import annotations
 from typing import Callable
 
 
-AgentFactory = Callable[[object], object]
-HubFactory = Callable[[object], object]
+HubFactory = Callable[[object, str], object]
+_HUB_TYPES: dict[str, HubFactory] = {}
 
-_AGENT_FACTORIES: dict[str, AgentFactory] = {}
-_HUB_FACTORIES: dict[str, HubFactory] = {}
-
-
-def register_agent_factory(agent_id: str, factory: AgentFactory) -> None:
-    if agent_id in _AGENT_FACTORIES:
+def register_hub_type(hub_type: str, factory: HubFactory) -> None:
+    if hub_type in _HUB_TYPES:
         return
-    _AGENT_FACTORIES[agent_id] = factory
+    _HUB_TYPES[hub_type] = factory
 
-
-def register_hub_factory(hub_id: str, factory: HubFactory) -> None:
-    if hub_id in _HUB_FACTORIES:
-        return
-    _HUB_FACTORIES[hub_id] = factory
-
-
-def get_registered_agent_factories() -> dict[str, AgentFactory]:
-    return dict(_AGENT_FACTORIES)
-
-
-def get_registered_hub_factories() -> dict[str, HubFactory]:
-    return dict(_HUB_FACTORIES)
+def get_registered_hub_types() -> dict[str, HubFactory]:
+    return dict(_HUB_TYPES)

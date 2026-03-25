@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""检视服务。"""
+"""Review workflows and settings management."""
 
 from __future__ import annotations
 
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 from ..application.app_context import AppContext
-from ..domain import ReviewAgent, ReviewHub
+from ..domain import ReviewAgent, ReviewHub, get_registered_hub_types
+from ..integrations import build_configured_agents, build_configured_hubs
 from ..utils import format_command, stream_command
 
 
 class ReviewService:
-    """封装检视任务的创建、查询与执行。"""
+    """Encapsulate review execution and runtime settings workflows."""
 
     def __init__(
         self,
@@ -43,6 +45,19 @@ class ReviewService:
             },
         }
 
+    def get_settings(self) -> dict[str, object]:
+        agents = [self._serialize_agent_settings(agent_id) for agent_id in sorted(self._agents)]
+        hubs = [self._serialize_hub_settings(hub_id) for hub_id in sorted(self._hubs)]
+        return {
+            "defaults": {
+                "agent_id": self._config_manager.get_default_agent_id(),
+                "hub_id": self._config_manager.get_default_hub_id(),
+            },
+            "agents": sorted(agents, key=lambda item: str(item["name"])),
+            "hubs": sorted(hubs, key=lambda item: str(item["name"])),
+            "hub_types": sorted(get_registered_hub_types()),
+        }
+
     def create_review(self, payload: dict[str, object]) -> dict[str, object]:
         mr_url = str(payload.get("mr_url") or "").strip()
         hub_id = str(payload.get("hub_id") or self._config_manager.get_default_hub_id()).strip()
@@ -52,9 +67,9 @@ class ReviewService:
         if not mr_url:
             raise ValueError("MR 检视地址不能为空")
         if agent_id not in self._agents:
-            raise ValueError(f"未注册或未启用的 Agent：{agent_id}")
+            raise ValueError(f"未注册的 Agent：{agent_id}")
         if hub_id not in self._hubs:
-            raise ValueError(f"未注册或未启用的 Hub：{hub_id}")
+            raise ValueError(f"未注册的 Hub：{hub_id}")
         if not model_id:
             raise ValueError("模型不能为空")
 
@@ -113,21 +128,14 @@ class ReviewService:
     def refresh_agent_models(self, agent_id: str) -> dict[str, object]:
         agent = self._agents.get(agent_id)
         if agent is None:
-            raise ValueError(f"未注册或未启用的 Agent：{agent_id}")
-        catalog = agent.refresh_model_catalog()
-        return {
-            "id": agent.agent_id,
-            "name": agent.agent_id,
-            "models": [item.to_dict() for item in catalog.models],
-            "default_model_id": agent.get_default_model_id(),
-            "model_source": catalog.source,
-            "model_error": catalog.error,
-        }
+            raise ValueError(f"未注册的 Agent：{agent_id}")
+        agent.refresh_model_catalog()
+        return self._serialize_agent_settings(agent_id)
 
     def set_agent_default_model(self, agent_id: str, model_id: str) -> dict[str, object]:
         agent = self._agents.get(agent_id)
         if agent is None:
-            raise ValueError(f"未注册或未启用的 Agent：{agent_id}")
+            raise ValueError(f"未注册的 Agent：{agent_id}")
 
         normalized_model_id = str(model_id or "").strip()
         if not normalized_model_id:
@@ -139,7 +147,43 @@ class ReviewService:
             raise ValueError(f"默认模型不属于当前 Agent：{normalized_model_id}")
 
         self._config_manager.update_agent_default_model(agent_id, normalized_model_id)
-        return agent.to_metadata()
+        return self._serialize_agent_settings(agent_id)
+
+    def save_agent_settings(self, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
+        if agent_id not in self._agents:
+            raise ValueError(f"未注册的 Agent：{agent_id}")
+
+        settings = self._normalize_agent_settings_payload(payload)
+        self._apply_config_change(lambda: self._config_manager.update_agent_settings(agent_id, settings))
+        return self._serialize_agent_settings(agent_id)
+
+    def set_default_agent(self, agent_id: str) -> dict[str, object]:
+        if agent_id not in self._agents:
+            raise ValueError(f"未注册的 Agent：{agent_id}")
+
+        self._config_manager.update_default_agent_id(agent_id)
+        return {
+            "agent_id": agent_id,
+            "hub_id": self._config_manager.get_default_hub_id(),
+        }
+
+    def save_hub_settings(self, hub_id: str, payload: dict[str, object]) -> dict[str, object]:
+        if hub_id not in self._hubs:
+            raise ValueError(f"未注册的 Hub：{hub_id}")
+
+        settings = self._normalize_hub_settings_payload(payload)
+        self._apply_config_change(lambda: self._config_manager.update_hub_settings(hub_id, settings))
+        return self._serialize_hub_settings(hub_id)
+
+    def set_default_hub(self, hub_id: str) -> dict[str, object]:
+        if hub_id not in self._hubs:
+            raise ValueError(f"未注册的 Hub：{hub_id}")
+
+        self._config_manager.update_default_hub_id(hub_id)
+        return {
+            "agent_id": self._config_manager.get_default_agent_id(),
+            "hub_id": hub_id,
+        }
 
     def reset_running_reviews(self) -> None:
         self._review_repository.reset_running_pending_reviews()
@@ -163,6 +207,7 @@ class ReviewService:
 
         log_sequence = int(row.get("last_log_seq") or 0)
         review_output = ""
+
         def append_log(line: str) -> None:
             nonlocal log_sequence
             log_sequence += 1
@@ -284,3 +329,165 @@ class ReviewService:
             "updated_at": row.get("updated_at"),
             "last_log_seq": row.get("last_log_seq"),
         }
+
+    def _serialize_agent_settings(self, agent_id: str) -> dict[str, object]:
+        agent = self._agents[agent_id]
+        config = self._config_manager.get_agent_config(agent_id)
+        raw_models = config.get("models") or []
+        if not isinstance(raw_models, list):
+            raise ValueError(f"agents.{agent_id}.models must be a list")
+
+        command_shell = config.get("command_shell")
+        if command_shell is not None and not isinstance(command_shell, (str, dict)):
+            raise ValueError(f"agents.{agent_id}.command_shell must be a string or mapping")
+
+        metadata = agent.to_metadata()
+        metadata["is_default"] = agent_id == self._config_manager.get_default_agent_id()
+        metadata["config"] = {
+            "list_models_command": str(config.get("list_models_command") or ""),
+            "review_command": str(config.get("review_command") or ""),
+            "models": [str(item).strip() for item in raw_models if str(item or "").strip()],
+            "default_model": str(config.get("default_model") or "").strip(),
+            "extra_env": {str(key): str(value) for key, value in (config.get("extra_env") or {}).items()},
+            "command_shell": command_shell,
+        }
+        return metadata
+
+    def _serialize_hub_settings(self, hub_id: str) -> dict[str, object]:
+        hub = self._hubs[hub_id]
+        config = self._config_manager.get_hub_config(hub_id)
+        metadata = hub.to_metadata()
+        metadata["type"] = str(config.get("type") or "").strip()
+        metadata["is_default"] = hub_id == self._config_manager.get_default_hub_id()
+        metadata["config"] = {
+            "type": str(config.get("type") or "").strip(),
+            "web_base_url": str(config.get("web_base_url") or "").strip(),
+            "api_base_url": str(config.get("api_base_url") or "").strip(),
+            "private_token": str(config.get("private_token") or "").strip(),
+            "clone_url_preference": str(config.get("clone_url_preference") or "http").strip().lower(),
+            "verify_ssl": bool(config.get("verify_ssl", True)),
+            "timeout_seconds": float(config.get("timeout_seconds") or 20),
+        }
+        return metadata
+
+    def _normalize_agent_settings_payload(self, payload: dict[str, object]) -> dict[str, object]:
+        if not isinstance(payload, dict):
+            raise ValueError("request body must be an object")
+
+        list_models_command = str(payload.get("list_models_command") or "").strip()
+        if not list_models_command:
+            raise ValueError("list_models_command 不能为空")
+
+        review_command = str(payload.get("review_command") or "").strip()
+        if not review_command:
+            raise ValueError("review_command 不能为空")
+
+        raw_models = payload.get("models") or []
+        if not isinstance(raw_models, list):
+            raise ValueError("models must be a list")
+        models = self._normalize_model_ids(raw_models)
+
+        default_model = str(payload.get("default_model_id") or payload.get("default_model") or "").strip()
+        if default_model and default_model not in models:
+            raise ValueError("默认模型必须出现在 models 列表里")
+
+        extra_env = payload.get("extra_env") or {}
+        if not isinstance(extra_env, dict):
+            raise ValueError("extra_env must be a mapping")
+
+        return {
+            "list_models_command": list_models_command,
+            "review_command": review_command,
+            "models": models,
+            "default_model": default_model,
+            "extra_env": {str(key): str(value) for key, value in extra_env.items()},
+            "command_shell": self._normalize_command_shell_payload(payload.get("command_shell")),
+        }
+
+    def _normalize_hub_settings_payload(self, payload: dict[str, object]) -> dict[str, object]:
+        if not isinstance(payload, dict):
+            raise ValueError("request body must be an object")
+
+        hub_type = str(payload.get("type") or "").strip()
+        if not hub_type:
+            raise ValueError("Hub 类型不能为空")
+        if hub_type not in get_registered_hub_types():
+            raise ValueError(f"未注册的 Hub 类型：{hub_type}")
+
+        clone_url_preference = str(payload.get("clone_url_preference") or "http").strip().lower() or "http"
+        if clone_url_preference not in {"http", "ssh"}:
+            raise ValueError("clone_url_preference must be http or ssh")
+
+        try:
+            timeout_seconds = max(float(payload.get("timeout_seconds") or 20), 1.0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("timeout_seconds must be a number") from exc
+
+        api_base_url = str(payload.get("api_base_url") or "").strip()
+        if hub_type == "gitlab" and not api_base_url:
+            raise ValueError("GitLab Hub 的 api_base_url 不能为空")
+
+        return {
+            "type": hub_type,
+            "web_base_url": str(payload.get("web_base_url") or "").strip(),
+            "api_base_url": api_base_url,
+            "private_token": str(payload.get("private_token") or "").strip(),
+            "clone_url_preference": clone_url_preference,
+            "verify_ssl": bool(payload.get("verify_ssl", True)),
+            "timeout_seconds": timeout_seconds,
+        }
+
+    def _normalize_command_shell_payload(self, raw_shell: object) -> str | dict[str, object] | None:
+        if raw_shell in (None, "", {}):
+            return None
+
+        if isinstance(raw_shell, str):
+            executable = raw_shell.strip()
+            return executable or None
+
+        if not isinstance(raw_shell, dict):
+            raise ValueError("command_shell must be a string or mapping")
+
+        executable = str(raw_shell.get("executable") or "").strip()
+        if not executable:
+            return None
+
+        raw_args = raw_shell.get("args")
+        if raw_args is None:
+            args: list[str] = []
+        elif not isinstance(raw_args, list):
+            raise ValueError("command_shell.args must be a list")
+        else:
+            args = [str(item).strip() for item in raw_args if str(item or "").strip()]
+
+        return {
+            "executable": executable,
+            "args": args,
+        }
+
+    def _normalize_model_ids(self, models: list[object]) -> list[str]:
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for item in models:
+            model_id = str(item or "").strip()
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            normalized.append(model_id)
+        return normalized
+
+    def _apply_config_change(self, mutator: Callable[[], object]) -> None:
+        previous_config = self._config_manager.get_raw_config()
+        try:
+            mutator()
+            self._reload_integrations()
+        except Exception:
+            self._config_manager.replace_raw_config(previous_config)
+            self._reload_integrations()
+            raise
+
+    def _reload_integrations(self) -> None:
+        self._agents.clear()
+        self._agents.update(build_configured_agents(self._ctx))
+        self._hubs.clear()
+        self._hubs.update(build_configured_hubs(self._ctx))

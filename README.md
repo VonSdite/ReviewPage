@@ -26,8 +26,8 @@
   - 点击后会把 MR 地址自动回填到发起区
   - 如果入口来自详情弹窗，会先关闭弹窗再聚焦回表单
   - Agent 和模型由用户重新选择，再决定是否发起检视
-- 当前提供的 Agent
-  - `opencode`
+- Agent 由配置文件动态定义
+  - 当前示例配置里使用的是 `opencode`
 - 当前提供的 Hub
   - `gitlab`
 - Agent / Hub 的显示名直接使用各自 `id`
@@ -69,7 +69,8 @@ http://127.0.0.1:8091
 - `database.path`
   - 只能写数据目录，例如 `data`
   - 程序会固定在该目录下使用 `review_page.sqlite3`
-- `hubs.gitlab`
+- `hubs.<id>`
+  - `type`: Hub 类型，例如 `gitlab`
   - `web_base_url`: GitLab 页面地址前缀
   - `api_base_url`: GitLab API 地址前缀
   - `private_token`: 访问私有项目时建议配置
@@ -77,7 +78,7 @@ http://127.0.0.1:8091
 - `command_shell`
   - 为所有 Agent 命令统一指定外层 shell
   - 适合 Windows 上强制走 Git Bash，例如 `C:/Program Files/Git/bin/bash.exe` + `-lc`
-- `agents.opencode`
+- `agents.<id>`
   - `list_models_command`: 完整列模型命令字符串，例如 `opencode models`
   - `review_command`: 完整检视命令字符串，例如 `opencode run --model "{model}" "/review {review_url}"`
   - `default_model`: 当前 Agent 的默认模型，可在前端直接设置并自动写回配置
@@ -85,6 +86,9 @@ http://127.0.0.1:8091
 - `agents.*` / `hubs.*`
   - 以配置 key 作为唯一标识
   - 前端展示时默认也直接显示这个 key
+- `hubs.<id>.type`
+  - 用来指定当前 Hub 实例使用哪个 Hub 类
+  - 因此同一个 Hub 类型可以在配置里声明多个实例，只改 URL 和 token
 - `workspace.temp_root`
   - 临时代码目录根路径
 
@@ -156,7 +160,7 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
    - [src/domain/registry.py](./src/domain/registry.py)
    - [src/integrations/__init__.py](./src/integrations/__init__.py)
 4. 当前实现
-   - [src/integrations/agents/opencode_agent.py](./src/integrations/agents/opencode_agent.py)
+   - [src/integrations/agents/configured_agent.py](./src/integrations/agents/configured_agent.py)
    - [src/integrations/hubs/gitlab_hub.py](./src/integrations/hubs/gitlab_hub.py)
 5. 持久化和后台执行
    - [src/repositories/review_repository.py](./src/repositories/review_repository.py)
@@ -176,7 +180,7 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
    - [tests/test_config_manager.py](./tests/test_config_manager.py)
    - [tests/test_review_repository.py](./tests/test_review_repository.py)
    - [tests/test_review_service.py](./tests/test_review_service.py)
-   - [tests/test_opencode_agent.py](./tests/test_opencode_agent.py)
+   - [tests/test_configured_agent.py](./tests/test_configured_agent.py)
    - [tests/test_gitlab_hub.py](./tests/test_gitlab_hub.py)
 
 ## 实现细节总览
@@ -202,16 +206,17 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
 
 ### 3. Agent / Hub 组织方式
 
-- [src/domain/registry.py](./src/domain/registry.py) 维护两个全局注册表
-  - `_AGENT_FACTORIES`
-  - `_HUB_FACTORIES`
-- 当前项目里的实现由 [src/integrations/__init__.py](./src/integrations/__init__.py) 接入
-- `Application._setup_integrations()` 会根据配置里的 `enabled` 过滤出真正启用的 Agent / Hub 实例
+- [src/domain/registry.py](./src/domain/registry.py) 只维护 Hub 类型的全局注册表
+  - `_HUB_TYPES`
+- Agent 由 [config.yaml](./config.yaml) 里的 `agents.<id>` 动态创建
+- Hub 由 [config.yaml](./config.yaml) 里的 `hubs.<id>` 动态创建，并通过 `type` 选择对应实现类
+- `Application._setup_integrations()` 会按配置实例化 Agent / Hub
 
 ### 4. 当前 Agent
 
-- [src/integrations/agents/opencode_agent.py](./src/integrations/agents/opencode_agent.py)
+- [src/integrations/agents/configured_agent.py](./src/integrations/agents/configured_agent.py)
 - 关键职责：
+  - 按 `agents.<id>` 动态读取配置并创建通用 CLI Agent
   - 平时从配置里的 `models` 读取前端展示模型
   - 点击刷新模型时执行 `list_models_command`，并把结果写回配置文件
   - 根据 `review_command` 生成一次性检视命令
@@ -337,7 +342,7 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
   - 建任务、认领任务、写日志、完成任务、分页
 - [tests/test_review_service.py](./tests/test_review_service.py)
   - 分页元数据、失败清理临时目录
-- [tests/test_opencode_agent.py](./tests/test_opencode_agent.py)
+- [tests/test_configured_agent.py](./tests/test_configured_agent.py)
   - 配置模型读取、刷新模型、命令构造
 - [tests/test_gitlab_hub.py](./tests/test_gitlab_hub.py)
   - GitLab MR 解析、域名校验
@@ -349,7 +354,7 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
 1. 先读 [main.py](./main.py) 和 [src/application/application.py](./src/application/application.py)，把启动顺序记住。
 2. 再读 [config.yaml](./config.yaml) 和 [src/config/config_manager.py](./src/config/config_manager.py)，搞清楚每个运行时资源从哪来。
 3. 接着读 [src/domain/registry.py](./src/domain/registry.py)、[src/domain/review_agent.py](./src/domain/review_agent.py)、[src/domain/review_hub.py](./src/domain/review_hub.py)，理解扩展点边界。
-4. 然后读当前实现 [src/integrations/agents/opencode_agent.py](./src/integrations/agents/opencode_agent.py) 和 [src/integrations/hubs/gitlab_hub.py](./src/integrations/hubs/gitlab_hub.py)，搞清楚“模型列表怎么来”“MR 怎么解析”。
+4. 然后读当前实现 [src/integrations/agents/configured_agent.py](./src/integrations/agents/configured_agent.py) 和 [src/integrations/hubs/gitlab_hub.py](./src/integrations/hubs/gitlab_hub.py)，搞清楚“模型列表怎么来”“MR 怎么解析”。
 5. 之后读 [src/repositories/review_repository.py](./src/repositories/review_repository.py)，先把数据库状态机和表结构吃透。
 6. 再读 [src/services/review_service.py](./src/services/review_service.py) 和 [src/services/review_queue_worker.py](./src/services/review_queue_worker.py)，这是业务最核心的部分。
 7. 最后读 [src/presentation/web_controller.py](./src/presentation/web_controller.py)、[src/presentation/templates/review.html](./src/presentation/templates/review.html)、`src/presentation/static/js/review.js`，把接口和页面行为连起来。

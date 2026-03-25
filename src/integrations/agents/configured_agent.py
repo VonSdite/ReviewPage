@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""OpenCode Agent 实现。"""
+"""Configuration-driven CLI review agent."""
 
 from __future__ import annotations
 
@@ -8,21 +8,29 @@ import os
 import shlex
 import subprocess
 
-from ...domain import AgentModelCatalog, ModelChoice, ReviewAgent, ReviewCommandSpec, register_agent_factory
-from ...utils import decode_command_output, resolve_command_argv
+from ...domain import AgentModelCatalog, ModelChoice, ReviewAgent, ReviewCommandSpec
+from ...utils import decode_command_output, resolve_command_argv, strip_terminal_control_sequences
 
 
-class OpencodeReviewAgent(ReviewAgent):
-    agent_id = "opencode"
+DEFAULT_OUTPUT_ENV = {
+    "NO_COLOR": "1",
+    "FORCE_COLOR": "0",
+    "CLICOLOR": "0",
+    "CLICOLOR_FORCE": "0",
+}
 
-    def __init__(self, ctx: object):
+
+class ConfiguredReviewAgent(ReviewAgent):
+    def __init__(self, ctx: object, agent_id: str):
         self._ctx = ctx
         self._logger = ctx.logger
+        self.agent_id = str(agent_id or "").strip()
+        if not self.agent_id:
+            raise ValueError("agent_id cannot be empty")
+
         self._config = ctx.config_manager.get_agent_config(self.agent_id)
-        self._list_models_command = str(self._config.get("list_models_command") or "opencode models").strip()
-        self._review_command = str(
-            self._config.get("review_command") or 'opencode run --model "{model}" "/review {review_url}"'
-        ).strip()
+        self._list_models_command = self._read_required_command("list_models_command")
+        self._review_command = self._read_required_command("review_command")
         global_command_shell = ctx.config_manager.get_command_shell_config()
         self._command_shell = self._parse_command_shell(global_command_shell or self._config.get("command_shell"))
         self._extra_env = {str(k): str(v) for k, v in (self._config.get("extra_env") or {}).items()}
@@ -50,11 +58,14 @@ class OpencodeReviewAgent(ReviewAgent):
             raise ValueError(f"获取模型列表失败：{exc}") from exc
 
         if completed.returncode != 0:
-            stderr = (decode_command_output(completed.stderr) or decode_command_output(completed.stdout)).strip()
+            stderr = (
+                strip_terminal_control_sequences(decode_command_output(completed.stderr))
+                or strip_terminal_control_sequences(decode_command_output(completed.stdout))
+            ).strip()
             message = stderr or f"命令退出码 {completed.returncode}"
             raise ValueError(f"获取模型列表失败：{message}")
 
-        stdout_text = decode_command_output(completed.stdout)
+        stdout_text = strip_terminal_control_sequences(decode_command_output(completed.stdout))
         model_ids: list[str] = []
         seen: set[str] = set()
         for raw_line in stdout_text.splitlines():
@@ -64,11 +75,10 @@ class OpencodeReviewAgent(ReviewAgent):
             if line.lower().startswith("available models"):
                 continue
             normalized = line.lstrip("-*").strip()
-            if not normalized:
+            if not normalized or normalized in seen:
                 continue
-            if normalized not in seen:
-                seen.add(normalized)
-                model_ids.append(normalized)
+            seen.add(normalized)
+            model_ids.append(normalized)
 
         if not model_ids:
             raise ValueError("Agent 未返回任何模型")
@@ -84,10 +94,16 @@ class OpencodeReviewAgent(ReviewAgent):
             review_url=review_url,
             workspace_dir=workspace_dir,
         )
-        return ReviewCommandSpec(argv=argv, env=dict(self._extra_env))
+        return ReviewCommandSpec(argv=argv, env=self._build_command_env())
 
     def get_default_model_id(self) -> str | None:
         return self._ctx.config_manager.get_agent_default_model_id(self.agent_id)
+
+    def _read_required_command(self, key: str) -> str:
+        value = str(self._config.get(key) or "").strip()
+        if value:
+            return value
+        raise ValueError(f"agents.{self.agent_id}.{key} cannot be empty")
 
     def _load_config_models(self) -> list[str]:
         agent_config = self._ctx.config_manager.get_agent_config(self.agent_id)
@@ -165,11 +181,12 @@ class OpencodeReviewAgent(ReviewAgent):
 
         return {"executable": executable, "args": args}
 
-    def _build_subprocess_env(self) -> dict[str, str]:
-        env = os.environ.copy()
+    def _build_command_env(self) -> dict[str, str]:
+        env = dict(DEFAULT_OUTPUT_ENV)
         env.update(self._extra_env)
         return env
 
-
-def register_opencode_agent() -> None:
-    register_agent_factory(OpencodeReviewAgent.agent_id, OpencodeReviewAgent)
+    def _build_subprocess_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env.update(self._build_command_env())
+        return env

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""页面与 API 控制器。"""
+"""Page and API controller."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ..services import ReviewQueueWorker, ReviewService
 
 
 class WebController:
-    """处理页面渲染、任务提交与查询。"""
+    """Handle page rendering and JSON APIs."""
 
     def __init__(self, ctx: AppContext, review_service: ReviewService, queue_worker: ReviewQueueWorker):
         self._ctx = ctx
@@ -24,8 +24,13 @@ class WebController:
     def _register_routes(self) -> None:
         self._app.route("/")(self.index)
         self._app.route("/api/meta", methods=["GET"])(self.get_meta)
+        self._app.route("/api/settings", methods=["GET"])(self.get_settings)
         self._app.route("/api/agents/<string:agent_id>/models/refresh", methods=["POST"])(self.refresh_agent_models)
         self._app.route("/api/agents/<string:agent_id>/default-model", methods=["POST"])(self.set_agent_default_model)
+        self._app.route("/api/settings/agents/<string:agent_id>", methods=["POST"])(self.save_agent_settings)
+        self._app.route("/api/settings/agents/<string:agent_id>/default", methods=["POST"])(self.set_default_agent)
+        self._app.route("/api/settings/hubs/<string:hub_id>", methods=["POST"])(self.save_hub_settings)
+        self._app.route("/api/settings/hubs/<string:hub_id>/default", methods=["POST"])(self.set_default_hub)
         self._app.route("/api/reviews", methods=["GET"])(self.list_reviews)
         self._app.route("/api/reviews", methods=["POST"])(self.create_review)
         self._app.route("/api/reviews/<int:review_id>", methods=["GET"])(self.get_review_detail)
@@ -38,6 +43,13 @@ class WebController:
             return jsonify(self._review_service.get_metadata())
         except Exception as exc:
             self._logger.exception("Failed to get review metadata")
+            return jsonify({"error": str(exc)}), 500
+
+    def get_settings(self) -> Response:
+        try:
+            return jsonify(self._review_service.get_settings())
+        except Exception as exc:
+            self._logger.exception("Failed to get settings metadata")
             return jsonify({"error": str(exc)}), 500
 
     def refresh_agent_models(self, agent_id: str) -> Response:
@@ -60,6 +72,50 @@ class WebController:
             return jsonify({"error": str(exc)}), 400
         except Exception as exc:
             self._logger.exception("Failed to set agent default model")
+            return jsonify({"error": str(exc)}), 500
+
+    def save_agent_settings(self, agent_id: str) -> Response:
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return jsonify({"error": "request body must be an object"}), 400
+
+        try:
+            return jsonify(self._review_service.save_agent_settings(agent_id, payload))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            self._logger.exception("Failed to save agent settings")
+            return jsonify({"error": str(exc)}), 500
+
+    def set_default_agent(self, agent_id: str) -> Response:
+        try:
+            return jsonify(self._review_service.set_default_agent(agent_id))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            self._logger.exception("Failed to set default agent")
+            return jsonify({"error": str(exc)}), 500
+
+    def save_hub_settings(self, hub_id: str) -> Response:
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return jsonify({"error": "request body must be an object"}), 400
+
+        try:
+            return jsonify(self._review_service.save_hub_settings(hub_id, payload))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            self._logger.exception("Failed to save hub settings")
+            return jsonify({"error": str(exc)}), 500
+
+    def set_default_hub(self, hub_id: str) -> Response:
+        try:
+            return jsonify(self._review_service.set_default_hub(hub_id))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            self._logger.exception("Failed to set default hub")
             return jsonify({"error": str(exc)}), 500
 
     def list_reviews(self) -> Response:

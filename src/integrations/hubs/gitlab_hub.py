@@ -9,18 +9,21 @@ from urllib.parse import quote, urlparse
 
 import requests
 
-from ...domain import MergeRequestTarget, ReviewHub, register_hub_factory
+from ...domain import MergeRequestTarget, ReviewHub, register_hub_type
 
 
 GITLAB_MR_PATTERN = re.compile(r"^(?P<project>.+?)(?:/-)?/merge_requests/(?P<iid>\d+)(?:$|/)")
 
 
 class GitLabReviewHub(ReviewHub):
-    hub_id = "gitlab"
+    hub_type = "gitlab"
 
-    def __init__(self, ctx: object):
+    def __init__(self, ctx: object, hub_id: str):
         self._ctx = ctx
         self._logger = ctx.logger
+        self.hub_id = str(hub_id or "").strip()
+        if not self.hub_id:
+            raise ValueError("hub_id cannot be empty")
         self._config = ctx.config_manager.get_hub_config(self.hub_id)
         self._web_base_url = str(self._config.get("web_base_url") or "").rstrip("/")
         self._api_base_url = str(self._config.get("api_base_url") or "").rstrip("/")
@@ -117,4 +120,4 @@ class GitLabReviewHub(ReviewHub):
 
 
 def register_gitlab_hub() -> None:
-    register_hub_factory(GitLabReviewHub.hub_id, GitLabReviewHub)
+    register_hub_type(GitLabReviewHub.hub_type, GitLabReviewHub)

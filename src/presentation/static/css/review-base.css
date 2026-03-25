@@ -1,4 +1,5 @@
 :root {
+    color-scheme: light;
     --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-mono: "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", "Consolas", "PingFang SC", monospace;
     --bg-page: #f4f8fc;
@@ -25,10 +26,16 @@
     --radius-md: 18px;
     --radius-lg: 24px;
     --focus: rgba(95, 143, 190, 0.24);
+    --scrollbar-size: 10px;
+    --scrollbar-track: rgba(95, 143, 190, 0.12);
+    --scrollbar-thumb: rgba(95, 143, 190, 0.4);
+    --scrollbar-thumb-hover: rgba(79, 130, 180, 0.56);
+    --scrollbar-thumb-active: rgba(69, 117, 164, 0.68);
     --transition: 180ms ease;
 }
 
 :root[data-theme="dark"] {
+    color-scheme: dark;
     --bg-page: #0d1117;
     --bg-shell: rgba(13, 17, 23, 0.74);
     --surface: #161b22;
@@ -50,18 +57,14 @@
     --shadow-soft: 0 20px 52px rgba(1, 4, 9, 0.72);
     --shadow-card: 0 10px 28px rgba(1, 4, 9, 0.58);
     --focus: rgba(47, 129, 247, 0.32);
+    --scrollbar-track: rgba(7, 11, 18, 0.78);
+    --scrollbar-thumb: rgba(90, 122, 158, 0.52);
+    --scrollbar-thumb-hover: rgba(113, 151, 192, 0.7);
+    --scrollbar-thumb-active: rgba(143, 186, 232, 0.82);
 }
 
 * {
     box-sizing: border-box;
-}
-
-html {
-    color-scheme: light;
-}
-
-:root[data-theme="dark"] html {
-    color-scheme: dark;
 }
 
 body.review-page {
@@ -76,6 +79,7 @@ body.review-page {
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    scrollbar-gutter: stable;
 }
 
 :root[data-theme="dark"] body.review-page {
@@ -103,6 +107,145 @@ a {
 pre,
 code {
     font-family: var(--font-mono);
+}
+
+body.review-page,
+.table-scroll,
+.detail-modal-card,
+.detail-content,
+.detail-block pre {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.table-scroll,
+.detail-modal-card,
+.detail-content,
+.detail-block pre {
+    scrollbar-gutter: stable;
+}
+
+body.review-page::-webkit-scrollbar,
+.table-scroll::-webkit-scrollbar,
+.detail-modal-card::-webkit-scrollbar,
+.detail-content::-webkit-scrollbar,
+.detail-block pre::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+    background: transparent;
+}
+
+body.review-page::-webkit-scrollbar-button,
+.table-scroll::-webkit-scrollbar-button,
+.detail-modal-card::-webkit-scrollbar-button,
+.detail-content::-webkit-scrollbar-button,
+.detail-block pre::-webkit-scrollbar-button {
+    width: 0;
+    height: 0;
+    display: none;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    -webkit-appearance: none;
+}
+
+body.review-page::-webkit-scrollbar-button:single-button,
+.table-scroll::-webkit-scrollbar-button:single-button,
+.detail-modal-card::-webkit-scrollbar-button:single-button,
+.detail-content::-webkit-scrollbar-button:single-button,
+.detail-block pre::-webkit-scrollbar-button:single-button,
+body.review-page::-webkit-scrollbar-button:single-button:vertical:decrement,
+.table-scroll::-webkit-scrollbar-button:single-button:vertical:decrement,
+.detail-modal-card::-webkit-scrollbar-button:single-button:vertical:decrement,
+.detail-content::-webkit-scrollbar-button:single-button:vertical:decrement,
+.detail-block pre::-webkit-scrollbar-button:single-button:vertical:decrement,
+body.review-page::-webkit-scrollbar-button:single-button:vertical:increment,
+.table-scroll::-webkit-scrollbar-button:single-button:vertical:increment,
+.detail-modal-card::-webkit-scrollbar-button:single-button:vertical:increment,
+.detail-content::-webkit-scrollbar-button:single-button:vertical:increment,
+.detail-block pre::-webkit-scrollbar-button:single-button:vertical:increment,
+body.review-page::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.table-scroll::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.detail-modal-card::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.detail-content::-webkit-scrollbar-button:single-button:horizontal:decrement,
+.detail-block pre::-webkit-scrollbar-button:single-button:horizontal:decrement,
+body.review-page::-webkit-scrollbar-button:single-button:horizontal:increment,
+.table-scroll::-webkit-scrollbar-button:single-button:horizontal:increment,
+.detail-modal-card::-webkit-scrollbar-button:single-button:horizontal:increment,
+.detail-content::-webkit-scrollbar-button:single-button:horizontal:increment,
+.detail-block pre::-webkit-scrollbar-button:single-button:horizontal:increment {
+    width: 0;
+    height: 0;
+    min-width: 0;
+    min-height: 0;
+    max-width: 0;
+    max-height: 0;
+    display: none;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    -webkit-appearance: none;
+}
+
+body.review-page::-webkit-scrollbar-track,
+.table-scroll::-webkit-scrollbar-track,
+.detail-modal-card::-webkit-scrollbar-track,
+.detail-content::-webkit-scrollbar-track,
+.detail-block pre::-webkit-scrollbar-track {
+    border: 2px solid transparent;
+    background: var(--scrollbar-track);
+    background-clip: content-box;
+    border-radius: 999px;
+}
+
+.detail-modal-card::-webkit-scrollbar-track:vertical,
+.detail-content::-webkit-scrollbar-track:vertical,
+.detail-block pre::-webkit-scrollbar-track:vertical {
+    border-width: 8px 2px;
+}
+
+body.review-page::-webkit-scrollbar-track-piece,
+.table-scroll::-webkit-scrollbar-track-piece,
+.detail-modal-card::-webkit-scrollbar-track-piece,
+.detail-content::-webkit-scrollbar-track-piece,
+.detail-block pre::-webkit-scrollbar-track-piece {
+    background: transparent;
+}
+
+body.review-page::-webkit-scrollbar-thumb,
+.table-scroll::-webkit-scrollbar-thumb,
+.detail-modal-card::-webkit-scrollbar-thumb,
+.detail-content::-webkit-scrollbar-thumb,
+.detail-block pre::-webkit-scrollbar-thumb {
+    min-height: 48px;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--scrollbar-thumb);
+    background-clip: content-box;
+}
+
+body.review-page::-webkit-scrollbar-thumb:hover,
+.table-scroll::-webkit-scrollbar-thumb:hover,
+.detail-modal-card::-webkit-scrollbar-thumb:hover,
+.detail-content::-webkit-scrollbar-thumb:hover,
+.detail-block pre::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+body.review-page::-webkit-scrollbar-thumb:active,
+.table-scroll::-webkit-scrollbar-thumb:active,
+.detail-modal-card::-webkit-scrollbar-thumb:active,
+.detail-content::-webkit-scrollbar-thumb:active,
+.detail-block pre::-webkit-scrollbar-thumb:active {
+    background: var(--scrollbar-thumb-active);
+}
+
+body.review-page::-webkit-scrollbar-corner,
+.table-scroll::-webkit-scrollbar-corner,
+.detail-modal-card::-webkit-scrollbar-corner,
+.detail-content::-webkit-scrollbar-corner,
+.detail-block pre::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 .theme-toggle {

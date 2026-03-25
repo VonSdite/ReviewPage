@@ -1,6 +1,6 @@
 server:
   host: 127.0.0.1
-  port: 8091
+  port: 31944
 database:
   path: data
 logging:
@@ -11,9 +11,9 @@ workspace:
 queue:
   poll_interval_seconds: 2
 hubs:
-  default: gitlab
-  gitlab:
-    enabled: true
+  default: gitlab_public
+  gitlab_public:
+    type: gitlab
     web_base_url: https://gitlab.example.com
     api_base_url: https://gitlab.example.com/api/v4
     private_token: null
@@ -23,7 +23,6 @@ hubs:
 agents:
   default: opencode
   opencode:
-    enabled: true
     list_models_command: opencode models
     review_command: opencode run --model "{model}" "/review {review_url}"
     models:
@@ -41,4 +40,4 @@ agents:
     - volcengine/ark-code-latest
     - volcengine/kimi-k2.5
     extra_env: {}
-    default_model: proxy/volc_code/GLM-4.7
+    default_model: proxy/volc_code/kimi-k2.5

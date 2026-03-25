@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import locale
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -22,6 +23,25 @@ class CommandRunResult:
 
 def format_command(argv: list[str]) -> str:
     return shlex.join(argv)
+
+
+_TERMINAL_ESCAPE_RE = re.compile(
+    r"""
+    (?:\x1B\][^\x07\x1B]*(?:\x07|\x1B\\))
+    |(?:\x1B[@-_][0-?]*[ -/]*[@-~])
+    |(?:\x9B[0-?]*[ -/]*[@-~])
+    """,
+    re.VERBOSE,
+)
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+def strip_terminal_control_sequences(text: str) -> str:
+    if not text:
+        return ""
+
+    without_escape_sequences = _TERMINAL_ESCAPE_RE.sub("", text)
+    return _CONTROL_CHAR_RE.sub("", without_escape_sequences)
 
 
 def decode_command_output(data: bytes | str | None) -> str:
@@ -104,7 +124,9 @@ def stream_command(
     lines: list[str] = []
     assert process.stdout is not None
     for raw_line in process.stdout:
-        line = decode_command_output(raw_line).rstrip("\r\n")
+        line = strip_terminal_control_sequences(decode_command_output(raw_line)).rstrip("\r\n")
+        if not line and raw_line.rstrip(b"\r\n"):
+            continue
         lines.append(line)
         if on_output:
             on_output(line)
