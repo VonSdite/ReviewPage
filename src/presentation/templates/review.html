@@ -9,8 +9,8 @@
     <div class="page-frame">
         <header class="page-topbar">
             <div class="topbar-copy">
-                <h1>MR 检视中心</h1>
-                <p class="topbar-summary">代码检视、查看历史，系统设置</p>
+                <h1 id="pageTopbarTitle">MR 检视中心</h1>
+                <p class="topbar-summary" id="pageTopbarSummary">代码检视、查看历史</p>
             </div>
             <div class="page-tab-nav" role="tablist" aria-label="页面导航">
                 <button
@@ -46,7 +46,13 @@
             </div>
         </header>
 
-        <section class="page-panel" id="pagePanelReview" data-page-panel="review">
+        <section
+            class="page-panel"
+            id="pagePanelReview"
+            data-page-panel="review"
+            data-page-title="MR 检视中心"
+            data-page-summary="代码检视、查看历史"
+        >
             <section class="workspace-grid">
                 <div class="workspace-main">
                     <section class="panel-card submit-panel">
@@ -153,15 +159,15 @@
             </section>
         </section>
 
-        <section class="page-panel" id="pagePanelSettings" data-page-panel="settings" hidden>
+        <section
+            class="page-panel"
+            id="pagePanelSettings"
+            data-page-panel="settings"
+            data-page-title="系统设置"
+            data-page-summary="设置Agent\平台"
+            hidden
+        >
             <section class="panel-card settings-shell">
-                <div class="panel-head">
-                    <div>
-                        <h2>系统设置</h2>
-                        <p>集中维护智能体 / 平台配置、默认项和模型列表，首页只保留发起检视。</p>
-                    </div>
-                </div>
-
                 <div class="settings-tab-nav" role="tablist" aria-label="设置导航">
                     <button
                         type="button"
@@ -428,6 +434,6 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="/static/js/review.js?v=20260324-14"></script>
+<script src="/static/js/review.js?v=20260325-1"></script>
 
 {% endblock %}

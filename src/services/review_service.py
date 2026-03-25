@@ -11,7 +11,7 @@ from typing import Callable
 
 from ..application.app_context import AppContext
 from ..domain import ReviewAgent, ReviewHub, get_registered_hub_types
-from ..integrations import build_configured_agents, build_configured_hubs
+from ..integrations import build_config_driven_agents, build_configured_hubs
 from ..utils import format_command, stream_command
 
 
@@ -488,6 +488,6 @@ class ReviewService:
 
     def _reload_integrations(self) -> None:
         self._agents.clear()
-        self._agents.update(build_configured_agents(self._ctx))
+        self._agents.update(build_config_driven_agents(self._ctx))
         self._hubs.clear()
         self._hubs.update(build_configured_hubs(self._ctx))

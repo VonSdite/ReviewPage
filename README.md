@@ -160,7 +160,7 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
    - [src/domain/registry.py](./src/domain/registry.py)
    - [src/integrations/__init__.py](./src/integrations/__init__.py)
 4. 当前实现
-   - [src/integrations/agents/configured_agent.py](./src/integrations/agents/configured_agent.py)
+   - [src/integrations/agents/config_driven_agent.py](./src/integrations/agents/config_driven_agent.py)
    - [src/integrations/hubs/gitlab_hub.py](./src/integrations/hubs/gitlab_hub.py)
 5. 持久化和后台执行
    - [src/repositories/review_repository.py](./src/repositories/review_repository.py)
@@ -180,7 +180,7 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
    - [tests/test_config_manager.py](./tests/test_config_manager.py)
    - [tests/test_review_repository.py](./tests/test_review_repository.py)
    - [tests/test_review_service.py](./tests/test_review_service.py)
-   - [tests/test_configured_agent.py](./tests/test_configured_agent.py)
+   - [tests/test_config_driven_agent.py](./tests/test_config_driven_agent.py)
    - [tests/test_gitlab_hub.py](./tests/test_gitlab_hub.py)
 
 ## 实现细节总览
@@ -214,7 +214,7 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
 
 ### 4. 当前 Agent
 
-- [src/integrations/agents/configured_agent.py](./src/integrations/agents/configured_agent.py)
+- [src/integrations/agents/config_driven_agent.py](./src/integrations/agents/config_driven_agent.py)
 - 关键职责：
   - 按 `agents.<id>` 动态读取配置并创建通用 CLI Agent
   - 平时从配置里的 `models` 读取前端展示模型
@@ -342,7 +342,7 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
   - 建任务、认领任务、写日志、完成任务、分页
 - [tests/test_review_service.py](./tests/test_review_service.py)
   - 分页元数据、失败清理临时目录
-- [tests/test_configured_agent.py](./tests/test_configured_agent.py)
+- [tests/test_config_driven_agent.py](./tests/test_config_driven_agent.py)
   - 配置模型读取、刷新模型、命令构造
 - [tests/test_gitlab_hub.py](./tests/test_gitlab_hub.py)
   - GitLab MR 解析、域名校验
@@ -354,7 +354,7 @@ Hub 需要实现 [review_hub.py](./src/domain/review_hub.py)：
 1. 先读 [main.py](./main.py) 和 [src/application/application.py](./src/application/application.py)，把启动顺序记住。
 2. 再读 [config.yaml](./config.yaml) 和 [src/config/config_manager.py](./src/config/config_manager.py)，搞清楚每个运行时资源从哪来。
 3. 接着读 [src/domain/registry.py](./src/domain/registry.py)、[src/domain/review_agent.py](./src/domain/review_agent.py)、[src/domain/review_hub.py](./src/domain/review_hub.py)，理解扩展点边界。
-4. 然后读当前实现 [src/integrations/agents/configured_agent.py](./src/integrations/agents/configured_agent.py) 和 [src/integrations/hubs/gitlab_hub.py](./src/integrations/hubs/gitlab_hub.py)，搞清楚“模型列表怎么来”“MR 怎么解析”。
+4. 然后读当前实现 [src/integrations/agents/config_driven_agent.py](./src/integrations/agents/config_driven_agent.py) 和 [src/integrations/hubs/gitlab_hub.py](./src/integrations/hubs/gitlab_hub.py)，搞清楚“模型列表怎么来”“MR 怎么解析”。
 5. 之后读 [src/repositories/review_repository.py](./src/repositories/review_repository.py)，先把数据库状态机和表结构吃透。
 6. 再读 [src/services/review_service.py](./src/services/review_service.py) 和 [src/services/review_queue_worker.py](./src/services/review_queue_worker.py)，这是业务最核心的部分。
 7. 最后读 [src/presentation/web_controller.py](./src/presentation/web_controller.py)、[src/presentation/templates/review.html](./src/presentation/templates/review.html)、`src/presentation/static/js/review.js`，把接口和页面行为连起来。

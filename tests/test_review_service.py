@@ -244,7 +244,7 @@ class ReviewServiceTestCase(unittest.TestCase):
         repository = ReviewRepository(create_connection_factory(Path(temp_root) / "review.db"))
 
         patchers = [
-            patch("src.services.review_service.build_configured_agents", side_effect=_build_fake_agents),
+            patch("src.services.review_service.build_config_driven_agents", side_effect=_build_fake_agents),
             patch("src.services.review_service.build_configured_hubs", side_effect=_build_fake_hubs),
             patch("src.services.review_service.get_registered_hub_types", return_value=["gitlab"]),
         ]

@@ -31,7 +31,7 @@ class ConfigManagerTestCase(unittest.TestCase):
         self.assertEqual(manager.get_default_hub_id(), "")
         self.assertIsNone(manager.get_agent_default_model_id("opencode"))
 
-    def test_default_agent_falls_back_to_first_configured_agent(self):
+    def test_default_agent_falls_back_to_first_config_driven_agent(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             config_path = root / "config.yaml"

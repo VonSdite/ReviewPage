@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Configuration-driven CLI review agent."""
+"""Config-driven CLI review agent."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ DEFAULT_OUTPUT_ENV = {
 }
 
 
-class ConfiguredReviewAgent(ReviewAgent):
+class ConfigDrivenReviewAgent(ReviewAgent):
     def __init__(self, ctx: object, agent_id: str):
         self._ctx = ctx
         self._logger = ctx.logger

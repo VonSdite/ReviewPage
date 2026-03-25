@@ -21,6 +21,8 @@
     const elements = {};
 
     function cacheElements() {
+        elements.pageTopbarTitle = document.getElementById('pageTopbarTitle');
+        elements.pageTopbarSummary = document.getElementById('pageTopbarSummary');
         elements.reviewForm = document.getElementById('reviewForm');
         elements.mrUrlInput = document.getElementById('mrUrlInput');
         elements.hubSelect = document.getElementById('hubSelect');
@@ -397,6 +399,27 @@
         });
     }
 
+    function syncPageTopbar(tabId) {
+        const activePanel = elements.pagePanels.find(function(panel) {
+            return panel.getAttribute('data-page-panel') === tabId;
+        });
+
+        if (!activePanel) {
+            return;
+        }
+
+        const nextTitle = String(activePanel.getAttribute('data-page-title') || '').trim();
+        const nextSummary = String(activePanel.getAttribute('data-page-summary') || '').trim();
+
+        if (elements.pageTopbarTitle && nextTitle) {
+            elements.pageTopbarTitle.textContent = nextTitle;
+        }
+
+        if (elements.pageTopbarSummary) {
+            elements.pageTopbarSummary.textContent = nextSummary;
+        }
+    }
+
     function setActivePageTab(tabId) {
         state.activePageTab = tabId;
 
@@ -409,6 +432,8 @@
         elements.pagePanels.forEach(function(panel) {
             panel.hidden = panel.getAttribute('data-page-panel') !== tabId;
         });
+
+        syncPageTopbar(tabId);
     }
 
     function setActiveSettingsTab(tabId) {

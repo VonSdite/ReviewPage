@@ -8,7 +8,7 @@ from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
-from src.integrations.agents import ConfiguredReviewAgent, build_configured_agents
+from src.integrations.agents import ConfigDrivenReviewAgent, build_config_driven_agents
 
 
 class _FakeConfigManager:
@@ -55,7 +55,7 @@ class _FakeCompletedProcess:
 
 class _FakeCtx:
     def __init__(self, agent_configs=None, command_shell_config=None):
-        self.logger = logging.getLogger("test.configured_agent")
+        self.logger = logging.getLogger("test.config_driven_agent")
         self.config_manager = _FakeConfigManager(
             agent_configs=agent_configs,
             command_shell_config=command_shell_config,
@@ -63,8 +63,8 @@ class _FakeCtx:
         self.root_path = Path(".")
 
 
-class ConfiguredAgentTestCase(unittest.TestCase):
-    def test_build_configured_agents_reads_all_agent_ids(self):
+class ConfigDrivenAgentTestCase(unittest.TestCase):
+    def test_build_config_driven_agents_reads_all_agent_ids(self):
         ctx = _FakeCtx(
             agent_configs={
                 "agent-a": {
@@ -80,20 +80,20 @@ class ConfiguredAgentTestCase(unittest.TestCase):
             }
         )
 
-        agents = build_configured_agents(ctx)
+        agents = build_config_driven_agents(ctx)
 
         self.assertEqual(sorted(agents), ["agent-a", "agent-b"])
-        self.assertTrue(all(isinstance(agent, ConfiguredReviewAgent) for agent in agents.values()))
+        self.assertTrue(all(isinstance(agent, ConfigDrivenReviewAgent) for agent in agents.values()))
 
     def test_get_model_catalog_reads_from_config(self):
-        agent = ConfiguredReviewAgent(_FakeCtx(), "demo-agent")
+        agent = ConfigDrivenReviewAgent(_FakeCtx(), "demo-agent")
         catalog = agent.get_model_catalog()
 
         self.assertEqual(catalog.source, "config")
         self.assertEqual([item.model_id for item in catalog.models], ["configured/model"])
 
     def test_get_default_model_id_reads_from_config(self):
-        agent = ConfiguredReviewAgent(
+        agent = ConfigDrivenReviewAgent(
             _FakeCtx(
                 agent_configs={
                     "demo-agent": {
@@ -111,9 +111,9 @@ class ConfiguredAgentTestCase(unittest.TestCase):
 
     def test_refresh_model_catalog_updates_config(self):
         ctx = _FakeCtx()
-        agent = ConfiguredReviewAgent(ctx, "demo-agent")
+        agent = ConfigDrivenReviewAgent(ctx, "demo-agent")
 
-        with patch("src.integrations.agents.configured_agent.subprocess.run") as mocked_run:
+        with patch("src.integrations.agents.config_driven_agent.subprocess.run") as mocked_run:
             mocked_run.return_value = _FakeCompletedProcess(
                 returncode=0,
                 stdout="provider/model-a\nprovider/model-b\n",
@@ -126,9 +126,9 @@ class ConfiguredAgentTestCase(unittest.TestCase):
 
     def test_refresh_model_catalog_strips_terminal_control_sequences(self):
         ctx = _FakeCtx()
-        agent = ConfiguredReviewAgent(ctx, "demo-agent")
+        agent = ConfigDrivenReviewAgent(ctx, "demo-agent")
 
-        with patch("src.integrations.agents.configured_agent.subprocess.run") as mocked_run:
+        with patch("src.integrations.agents.config_driven_agent.subprocess.run") as mocked_run:
             mocked_run.return_value = _FakeCompletedProcess(
                 returncode=0,
                 stdout="\x1b[32mprovider/model-a\x1b[0m\n",
@@ -139,9 +139,9 @@ class ConfiguredAgentTestCase(unittest.TestCase):
         self.assertEqual(ctx.config_manager.updated_models, ("demo-agent", ["provider/model-a"]))
 
     def test_refresh_model_catalog_raises_when_command_fails(self):
-        agent = ConfiguredReviewAgent(_FakeCtx(), "demo-agent")
+        agent = ConfigDrivenReviewAgent(_FakeCtx(), "demo-agent")
 
-        with patch("src.integrations.agents.configured_agent.subprocess.run") as mocked_run:
+        with patch("src.integrations.agents.config_driven_agent.subprocess.run") as mocked_run:
             mocked_run.return_value = _FakeCompletedProcess(
                 returncode=1,
                 stderr="binary missing",
@@ -150,7 +150,7 @@ class ConfiguredAgentTestCase(unittest.TestCase):
                 agent.refresh_model_catalog()
 
     def test_build_review_command_uses_template(self):
-        agent = ConfiguredReviewAgent(_FakeCtx(), "demo-agent")
+        agent = ConfigDrivenReviewAgent(_FakeCtx(), "demo-agent")
         command = agent.build_review_command(
             model="provider/model-a",
             review_url="https://gitlab.example.com/group/project/-/merge_requests/8",
@@ -184,9 +184,9 @@ class ConfiguredAgentTestCase(unittest.TestCase):
                 "args": ["-lc"],
             }
         )
-        agent = ConfiguredReviewAgent(ctx, "demo-agent")
+        agent = ConfigDrivenReviewAgent(ctx, "demo-agent")
 
-        with patch("src.integrations.agents.configured_agent.subprocess.run") as mocked_run:
+        with patch("src.integrations.agents.config_driven_agent.subprocess.run") as mocked_run:
             mocked_run.return_value = _FakeCompletedProcess(
                 returncode=0,
                 stdout="provider/model-a\n",
@@ -199,9 +199,9 @@ class ConfiguredAgentTestCase(unittest.TestCase):
         )
 
     def test_refresh_model_catalog_disables_color_output_by_default(self):
-        agent = ConfiguredReviewAgent(_FakeCtx(), "demo-agent")
+        agent = ConfigDrivenReviewAgent(_FakeCtx(), "demo-agent")
 
-        with patch("src.integrations.agents.configured_agent.subprocess.run") as mocked_run:
+        with patch("src.integrations.agents.config_driven_agent.subprocess.run") as mocked_run:
             mocked_run.return_value = _FakeCompletedProcess(returncode=0, stdout="provider/model-a\n")
             agent.refresh_model_catalog()
 
@@ -213,7 +213,7 @@ class ConfiguredAgentTestCase(unittest.TestCase):
         self.assertEqual(env["DEMO_AGENT_ENV"], "1")
 
     def test_build_review_command_wraps_with_configured_shell(self):
-        agent = ConfiguredReviewAgent(
+        agent = ConfigDrivenReviewAgent(
             _FakeCtx(
                 command_shell_config={
                     "executable": "C:/Program Files/Git/bin/bash.exe",
@@ -248,7 +248,7 @@ class ConfiguredAgentTestCase(unittest.TestCase):
         )
 
     def test_global_shell_takes_precedence_over_agent_level_shell(self):
-        agent = ConfiguredReviewAgent(
+        agent = ConfigDrivenReviewAgent(
             _FakeCtx(
                 agent_configs={
                     "demo-agent": {
@@ -277,10 +277,10 @@ class ConfiguredAgentTestCase(unittest.TestCase):
         self.assertEqual(command.argv[0], "C:/Program Files/Git/bin/bash.exe")
 
     def test_command_env_keeps_process_environment_available(self):
-        agent = ConfiguredReviewAgent(_FakeCtx(), "demo-agent")
+        agent = ConfigDrivenReviewAgent(_FakeCtx(), "demo-agent")
 
         with patch.dict(os.environ, {"PATH": "C:/Windows/System32"}, clear=True):
-            with patch("src.integrations.agents.configured_agent.subprocess.run") as mocked_run:
+            with patch("src.integrations.agents.config_driven_agent.subprocess.run") as mocked_run:
                 mocked_run.return_value = _FakeCompletedProcess(returncode=0, stdout="provider/model-a\n")
                 agent.refresh_model_catalog()
 
@@ -288,7 +288,7 @@ class ConfiguredAgentTestCase(unittest.TestCase):
 
     def test_missing_list_models_command_raises(self):
         with self.assertRaisesRegex(ValueError, "agents.demo-agent.list_models_command cannot be empty"):
-            ConfiguredReviewAgent(
+            ConfigDrivenReviewAgent(
                 _FakeCtx(
                     agent_configs={
                         "demo-agent": {
