@@ -3,6 +3,7 @@
 
 import logging
 import os
+import sys
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -174,6 +175,10 @@ class ConfigDrivenAgentTestCase(unittest.TestCase):
                 "CLICOLOR": "0",
                 "CLICOLOR_FORCE": "0",
                 "DEMO_AGENT_ENV": "1",
+                "PYTHONUTF8": "1",
+                "PYTHONIOENCODING": "utf-8",
+                "LANG": "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8",
+                "LC_ALL": "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8",
             },
         )
 
@@ -211,6 +216,10 @@ class ConfigDrivenAgentTestCase(unittest.TestCase):
         self.assertEqual(env["CLICOLOR"], "0")
         self.assertEqual(env["CLICOLOR_FORCE"], "0")
         self.assertEqual(env["DEMO_AGENT_ENV"], "1")
+        self.assertEqual(env["PYTHONUTF8"], "1")
+        self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
+        self.assertEqual(env["LANG"], "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8")
+        self.assertEqual(env["LC_ALL"], "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8")
 
     def test_refresh_model_catalog_hides_windows_console_window(self):
         agent = ConfigDrivenReviewAgent(_FakeCtx(), "demo-agent")
@@ -260,6 +269,10 @@ class ConfigDrivenAgentTestCase(unittest.TestCase):
                 "CLICOLOR": "0",
                 "CLICOLOR_FORCE": "0",
                 "DEMO_AGENT_ENV": "1",
+                "PYTHONUTF8": "1",
+                "PYTHONIOENCODING": "utf-8",
+                "LANG": "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8",
+                "LC_ALL": "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8",
             },
         )
 

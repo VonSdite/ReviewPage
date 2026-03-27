@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from src.utils.process import (
     CommandCancelledError,
+    build_subprocess_env,
     build_hidden_subprocess_kwargs,
     decode_command_output,
     resolve_command_argv,
@@ -20,6 +21,20 @@ from src.utils.process import (
 
 
 class ProcessTestCase(unittest.TestCase):
+    def test_build_subprocess_env_forces_utf8_defaults(self):
+        env = build_subprocess_env(
+            base_env={"PATH": "C:/Windows/System32", "LANG": "zh_CN.GBK"},
+            extra_env={"DEMO_FLAG": "1"},
+        )
+
+        expected_locale = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
+        self.assertEqual(env["PATH"], "C:/Windows/System32")
+        self.assertEqual(env["DEMO_FLAG"], "1")
+        self.assertEqual(env["PYTHONUTF8"], "1")
+        self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
+        self.assertEqual(env["LANG"], expected_locale)
+        self.assertEqual(env["LC_ALL"], expected_locale)
+
     def test_resolve_command_argv_uses_path_lookup(self):
         with patch("src.utils.process.shutil.which") as mocked_which:
             mocked_which.return_value = "C:/Users/Von/AppData/Roaming/npm/opencode.CMD"
@@ -92,6 +107,24 @@ class ProcessTestCase(unittest.TestCase):
         )
         self.assertEqual(mocked_popen.call_args.kwargs["bufsize"], -1)
         self.assertIs(mocked_popen.call_args.kwargs["stdin"], __import__("subprocess").DEVNULL)
+
+    def test_stream_command_injects_utf8_environment(self):
+        process = MagicMock()
+        process.stdout = iter([])
+        process.wait.return_value = 0
+
+        with patch("src.utils.process.subprocess.Popen") as mocked_popen:
+            mocked_popen.return_value = process
+
+            stream_command(["opencode", "models"], cwd=Path("."), env={"DEMO_FLAG": "1"})
+
+        expected_locale = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
+        env = mocked_popen.call_args.kwargs["env"]
+        self.assertEqual(env["DEMO_FLAG"], "1")
+        self.assertEqual(env["PYTHONUTF8"], "1")
+        self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
+        self.assertEqual(env["LANG"], expected_locale)
+        self.assertEqual(env["LC_ALL"], expected_locale)
 
     def test_stream_command_hides_windows_console_window(self):
         process = MagicMock()

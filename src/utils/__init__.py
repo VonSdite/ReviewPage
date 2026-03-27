@@ -3,6 +3,7 @@
 
 from .database import create_connection_factory
 from .process import (
+    build_subprocess_env,
     CommandCancelledError,
     CommandRunResult,
     build_hidden_subprocess_kwargs,
@@ -16,6 +17,7 @@ from .process import (
 
 __all__ = [
     "create_connection_factory",
+    "build_subprocess_env",
     "CommandCancelledError",
     "CommandRunResult",
     "build_hidden_subprocess_kwargs",

@@ -10,6 +10,7 @@ import subprocess
 
 from ...domain import AgentModelCatalog, ModelChoice, ReviewAgent, ReviewCommandSpec
 from ...utils import (
+    build_subprocess_env,
     build_hidden_subprocess_kwargs,
     decode_command_output,
     resolve_command_argv,
@@ -191,11 +192,7 @@ class ConfigDrivenReviewAgent(ReviewAgent):
         return {"executable": executable, "args": args}
 
     def _build_command_env(self) -> dict[str, str]:
-        env = dict(DEFAULT_OUTPUT_ENV)
-        env.update(self._extra_env)
-        return env
+        return build_subprocess_env(base_env={}, extra_env={**DEFAULT_OUTPUT_ENV, **self._extra_env})
 
     def _build_subprocess_env(self) -> dict[str, str]:
-        env = os.environ.copy()
-        env.update(self._build_command_env())
-        return env
+        return build_subprocess_env(extra_env={**DEFAULT_OUTPUT_ENV, **self._extra_env})

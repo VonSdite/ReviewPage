@@ -636,6 +636,130 @@ class ReviewServiceTestCase(unittest.TestCase):
         self.assertTrue(handled)
         self.assertFalse(temp_root.exists())
 
+    def test_execute_review_marks_task_failed_when_opencode_output_contains_error_marker(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service, _ctx = self.create_service(str(tmpdir))
+
+            created = service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/14",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            class _FakeResult:
+                def __init__(self, returncode, output):
+                    self.returncode = returncode
+                    self.output = output
+
+            with patch("src.services.review_service.stream_command") as mocked_stream_command:
+                mocked_stream_command.side_effect = [
+                    _FakeResult(0, "clone ok"),
+                    _FakeResult(
+                        0,
+                        '\n'.join(
+                            [
+                                '"instruction": "If your new comment adds value, retry with --force."}',
+                                'Error: AI_TypeValidationError: Type validation failed: Value: {"text":"[DONE]","error":{"error_msg":"Too many requests, the rate limit is 8000000 tokens per minute.","error_code":"InferHub.ModelArts.81101.429"},"error_code":"InferHub.ModelArts.81101.429","error_msg":"Too many requests, the rate limit is 8000000 tokens per minute."}.',
+                                'Error message: [{"code":"invalid_union","errors":[[{"expected":"array","code":"invalid_type","path":["choices"],"message":"Invalid input: expected array, received undefined"}],[{"expected":"string","code":"invalid_type","path":["error","message"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]',
+                            ]
+                        ),
+                    ),
+                ]
+                handled = service.execute_next_review()
+
+            detail = service.get_review_detail(int(created["id"]))
+
+        self.assertTrue(handled)
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(detail["status"], "failed")
+        self.assertEqual(detail["runtime_state"], "finished")
+        self.assertIn("Agent 输出检测到错误", str(detail["error_message"]))
+        self.assertIn("Error message:", str(detail["error_message"]))
+        self.assertIn("Too many requests", str(detail["result_text"]))
+
+    def test_execute_review_allows_review_text_that_mentions_error_word(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service, _ctx = self.create_service(str(tmpdir))
+
+            created = service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/15",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            class _FakeResult:
+                def __init__(self, returncode, output):
+                    self.returncode = returncode
+                    self.output = output
+
+            with patch("src.services.review_service.stream_command") as mocked_stream_command:
+                mocked_stream_command.side_effect = [
+                    _FakeResult(0, "clone ok"),
+                    _FakeResult(0, "Issue 1: improve error handling in retry logic"),
+                ]
+                handled = service.execute_next_review()
+
+            detail = service.get_review_detail(int(created["id"]))
+
+        self.assertTrue(handled)
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(detail["status"], "completed")
+        self.assertEqual(detail["runtime_state"], "finished")
+        self.assertIsNone(detail["error_message"])
+        self.assertEqual(detail["result_text"], "Issue 1: improve error handling in retry logic")
+
+    def test_execute_review_allows_traceback_like_review_text_without_error_prefix(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service, _ctx = self.create_service(str(tmpdir))
+
+            created = service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/16",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            class _FakeResult:
+                def __init__(self, returncode, output):
+                    self.returncode = returncode
+                    self.output = output
+
+            with patch("src.services.review_service.stream_command") as mocked_stream_command:
+                mocked_stream_command.side_effect = [
+                    _FakeResult(0, "clone ok"),
+                    _FakeResult(
+                        0,
+                        "\n".join(
+                            [
+                                "Review note: this path can surface the following traceback to users",
+                                "Traceback (most recent call last):",
+                                "ValueError: invalid payload",
+                            ]
+                        ),
+                    ),
+                ]
+                handled = service.execute_next_review()
+
+            detail = service.get_review_detail(int(created["id"]))
+
+        self.assertTrue(handled)
+        self.assertIsNotNone(detail)
+        assert detail is not None
+        self.assertEqual(detail["status"], "completed")
+        self.assertEqual(detail["runtime_state"], "finished")
+        self.assertIsNone(detail["error_message"])
+        self.assertIn("Traceback (most recent call last):", str(detail["result_text"]))
+
     def test_refresh_agent_models_returns_latest_settings_payload(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             service, _ctx = self.create_service(tmpdir)

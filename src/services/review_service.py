@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 import shutil
 import stat
 import tempfile
@@ -19,6 +20,11 @@ from ..domain import ReviewAgent, ReviewHub, get_registered_hub_types
 from ..integrations import build_config_driven_agents, build_configured_hubs
 from ..integrations.agents import ConfigDrivenReviewAgent
 from ..utils import CommandCancelledError, format_command, stream_command
+
+
+_AGENT_OUTPUT_FAILURE_PATTERNS = (
+    re.compile(r"^\s*error\b(?:[:\s-].*)?$", re.IGNORECASE),
+)
 
 
 class ReviewCancelledError(RuntimeError):
@@ -522,6 +528,9 @@ class ReviewService:
             review_output = review_result.output.strip()
             if review_result.returncode != 0:
                 raise RuntimeError(f"Agent 命令执行失败，退出码 {review_result.returncode}")
+            output_failure = self._detect_agent_output_failure(review_output)
+            if output_failure is not None:
+                raise RuntimeError(f"Agent 输出检测到错误：{output_failure}")
 
             append_log("[system] 检视执行完成")
             result_text = review_output or "检视已完成，但命令没有输出结果。"
@@ -649,6 +658,14 @@ class ReviewService:
         except OSError:
             return False
         return True
+
+    @staticmethod
+    def _detect_agent_output_failure(output: str) -> str | None:
+        non_empty_lines = [line.strip() for line in output.splitlines() if line.strip()]
+        for line in reversed(non_empty_lines[-20:]):
+            if any(pattern.search(line) for pattern in _AGENT_OUTPUT_FAILURE_PATTERNS):
+                return line
+        return None
 
     def _serialize_review_row(
         self,

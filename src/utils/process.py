@@ -12,6 +12,7 @@ import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +44,7 @@ _TERMINAL_ESCAPE_RE = re.compile(
     re.VERBOSE,
 )
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+_DEFAULT_UTF8_LOCALE = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
 
 
 def strip_terminal_control_sequences(text: str) -> str:
@@ -51,6 +53,25 @@ def strip_terminal_control_sequences(text: str) -> str:
 
     without_escape_sequences = _TERMINAL_ESCAPE_RE.sub("", text)
     return _CONTROL_CHAR_RE.sub("", without_escape_sequences)
+
+
+def build_subprocess_env(
+    *,
+    base_env: dict[str, str] | None = None,
+    extra_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    source_env = os.environ if base_env is None else base_env
+    env = {str(key): str(value) for key, value in source_env.items()}
+
+    if extra_env:
+        env.update({str(key): str(value) for key, value in extra_env.items()})
+
+    # Best-effort UTF-8 defaults for Python CLIs and locale-aware tools.
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["LANG"] = _DEFAULT_UTF8_LOCALE
+    env["LC_ALL"] = _DEFAULT_UTF8_LOCALE
+    return env
 
 
 def decode_command_output(data: bytes | str | None) -> str:
@@ -225,9 +246,7 @@ def stream_command(
     on_output: Callable[[str], None] | None = None,
     cancel_requested: Callable[[], bool] | None = None,
 ) -> CommandRunResult:
-    merged_env = os.environ.copy()
-    if env:
-        merged_env.update(env)
+    merged_env = build_subprocess_env(extra_env=env)
 
     resolved_argv = resolve_command_argv(argv)
 
