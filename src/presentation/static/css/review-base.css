@@ -1,13 +1,27 @@
 :root {
     color-scheme: light;
+    --app-container-max-width: min(96vw, 1860px);
+    --page-card-inset: 24px;
     --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-mono: "JetBrains Mono", "Cascadia Mono", "SFMono-Regular", "Consolas", "PingFang SC", monospace;
+    --font-size-xs: 12px;
+    --font-size-sm: 13px;
+    --font-size-md: 14px;
+    --font-size-lg: 16px;
+    --font-size-xl: 20px;
+    --font-size-2xl: 28px;
+    --line-height-tight: 1.2;
+    --line-height-compact: 1.45;
+    --line-height-body: 1.6;
     --bg-page: #f4f8fc;
     --bg-shell: rgba(255, 255, 255, 0.68);
     --surface: #ffffff;
     --surface-soft: #f7fbff;
     --surface-emphasis: #eff6fd;
     --surface-hover: #f2f7fd;
+    --nav-tab-hover-bg: #edf4fc;
+    --nav-tab-hover-border: #c6d9ec;
+    --nav-tab-hover-text: #4575a4;
     --text-primary: #0f172a;
     --text-secondary: #475569;
     --text-muted: #64748b;
@@ -15,6 +29,7 @@
     --line-strong: #c6d7e8;
     --primary: #5f8fbe;
     --primary-hover: #4f82b4;
+    --primary-active: #4575a4;
     --primary-strong: #4575a4;
     --success: #5b9a87;
     --warning: #ca8a04;
@@ -42,6 +57,9 @@
     --surface-soft: #0f141b;
     --surface-emphasis: #182331;
     --surface-hover: #1f2630;
+    --nav-tab-hover-bg: #18304b;
+    --nav-tab-hover-border: #2f5b8f;
+    --nav-tab-hover-text: #dbeafe;
     --text-primary: #e6edf3;
     --text-secondary: #9da7b3;
     --text-muted: #7d8590;
@@ -49,6 +67,7 @@
     --line-strong: #3d444d;
     --primary: #2f81f7;
     --primary-hover: #388bfd;
+    --primary-active: #1f6feb;
     --primary-strong: #1f6feb;
     --success: #3fb950;
     --warning: #d29922;
@@ -71,12 +90,13 @@ body.review-page {
     margin: 0;
     min-height: 100vh;
     font-family: var(--font-sans);
+    font-size: var(--font-size-md);
     color: var(--text-primary);
     background:
         radial-gradient(1040px 640px at -10% -10%, rgba(95, 143, 190, 0.14) 0%, transparent 62%),
         radial-gradient(920px 560px at 110% 0%, rgba(99, 161, 216, 0.14) 0%, transparent 62%),
         var(--bg-page);
-    line-height: 1.6;
+    line-height: var(--line-height-body);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     scrollbar-gutter: stable;
@@ -296,7 +316,9 @@ body.review-page::-webkit-scrollbar-corner,
     border-radius: 14px;
     border: 1px solid transparent;
     padding: 0 18px;
+    font-size: var(--font-size-md);
     font-weight: 700;
+    line-height: var(--line-height-tight);
     transition: border-color var(--transition), background-color var(--transition), color var(--transition), transform var(--transition), box-shadow var(--transition);
 }
 
@@ -343,7 +365,7 @@ body.review-page::-webkit-scrollbar-corner,
     border: 1px solid var(--line);
     background: var(--surface-soft);
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-xs);
     font-weight: 700;
     white-space: nowrap;
 }
@@ -379,7 +401,7 @@ body.review-page::-webkit-scrollbar-corner,
     display: grid;
     gap: 12px;
     width: min(360px, calc(100vw - 32px));
-    z-index: 40;
+    z-index: 120;
 }
 
 .toast {

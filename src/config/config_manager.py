@@ -30,7 +30,7 @@ class ConfigManager:
             self._config = raw
 
     def get_server_host(self) -> str:
-        return str(self._get_section("server").get("host") or "0.0.0.0")
+        return str(self._get_section("server").get("host") or "127.0.0.1")
 
     def get_server_port(self) -> int:
         return int(self._get_section("server").get("port") or 8091)
@@ -75,12 +75,10 @@ class ConfigManager:
         return agent_ids
 
     def get_default_agent_id(self) -> str:
-        configured_default = str(self._get_section("agents").get("default") or "").strip()
-        if configured_default:
-            return configured_default
+        return self.get_configured_default_agent_id()
 
-        agent_ids = self.get_agent_ids()
-        return agent_ids[0] if agent_ids else ""
+    def get_configured_default_agent_id(self) -> str:
+        return str(self._get_section("agents").get("default") or "").strip()
 
     def get_hub_ids(self) -> list[str]:
         hub_section = self._get_section("hubs")
@@ -97,12 +95,10 @@ class ConfigManager:
         return hub_ids
 
     def get_default_hub_id(self) -> str:
-        configured_default = str(self._get_section("hubs").get("default") or "").strip()
-        if configured_default:
-            return configured_default
+        return self.get_configured_default_hub_id()
 
-        hub_ids = self.get_hub_ids()
-        return hub_ids[0] if hub_ids else ""
+    def get_configured_default_hub_id(self) -> str:
+        return str(self._get_section("hubs").get("default") or "").strip()
 
     def get_agent_config(self, agent_id: str) -> dict[str, Any]:
         agent_cfg = self._get_section("agents").get(agent_id) or {}
@@ -182,6 +178,106 @@ class ConfigManager:
             self._write_config()
         return normalized
 
+    def delete_agent(self, agent_id: str) -> str:
+        normalized = str(agent_id or "").strip()
+        with self._lock:
+            agents = self._ensure_section("agents")
+            agent_cfg = agents.get(normalized)
+            if not isinstance(agent_cfg, dict):
+                raise ValueError(f"agents.{normalized} does not exist")
+
+            agents.pop(normalized, None)
+            current_default = str(agents.get("default") or "").strip()
+            if current_default == normalized:
+                agents.pop("default", None)
+            self._write_config()
+        return str(self.get_default_agent_id() or "")
+
+    def rename_agent(self, agent_id: str, new_agent_id: str) -> str:
+        normalized = str(agent_id or "").strip()
+        normalized_new = str(new_agent_id or "").strip()
+        if not normalized:
+            raise ValueError("agent_id cannot be empty")
+        if not normalized_new:
+            raise ValueError("new_agent_id cannot be empty")
+        if normalized == normalized_new:
+            return normalized
+
+        with self._lock:
+            agents = self._ensure_section("agents")
+            agent_cfg = agents.get(normalized)
+            if not isinstance(agent_cfg, dict):
+                raise ValueError(f"agents.{normalized} does not exist")
+
+            target_cfg = agents.get(normalized_new)
+            if target_cfg is not None:
+                raise ValueError(f"agents.{normalized_new} already exists")
+
+            renamed_agents: dict[str, Any] = {}
+            for raw_id, value in agents.items():
+                key = str(raw_id or "").strip()
+                if key == normalized:
+                    renamed_agents[normalized_new] = value
+                else:
+                    renamed_agents[raw_id] = value
+
+            if str(renamed_agents.get("default") or "").strip() == normalized:
+                renamed_agents["default"] = normalized_new
+
+            self._config["agents"] = renamed_agents
+            self._write_config()
+        return normalized_new
+
+    def rename_hub(self, hub_id: str, new_hub_id: str) -> str:
+        normalized = str(hub_id or "").strip()
+        normalized_new = str(new_hub_id or "").strip()
+        if not normalized:
+            raise ValueError("hub_id cannot be empty")
+        if not normalized_new:
+            raise ValueError("new_hub_id cannot be empty")
+        if normalized == normalized_new:
+            return normalized
+
+        with self._lock:
+            hubs = self._ensure_section("hubs")
+            hub_cfg = hubs.get(normalized)
+            if not isinstance(hub_cfg, dict):
+                raise ValueError(f"hubs.{normalized} does not exist")
+
+            target_cfg = hubs.get(normalized_new)
+            if target_cfg is not None:
+                raise ValueError(f"hubs.{normalized_new} already exists")
+
+            renamed_hubs: dict[str, Any] = {}
+            for raw_id, value in hubs.items():
+                key = str(raw_id or "").strip()
+                if key == normalized:
+                    renamed_hubs[normalized_new] = value
+                else:
+                    renamed_hubs[raw_id] = value
+
+            if str(renamed_hubs.get("default") or "").strip() == normalized:
+                renamed_hubs["default"] = normalized_new
+
+            self._config["hubs"] = renamed_hubs
+            self._write_config()
+        return normalized_new
+
+    def delete_hub(self, hub_id: str) -> str:
+        normalized = str(hub_id or "").strip()
+        with self._lock:
+            hubs = self._ensure_section("hubs")
+            hub_cfg = hubs.get(normalized)
+            if not isinstance(hub_cfg, dict):
+                raise ValueError(f"hubs.{normalized} does not exist")
+
+            hubs.pop(normalized, None)
+            current_default = str(hubs.get("default") or "").strip()
+            if current_default == normalized:
+                hubs.pop("default", None)
+            self._write_config()
+        return str(self.get_default_hub_id() or "")
+
     def update_agent_settings(self, agent_id: str, settings: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             agents = self._ensure_section("agents")
@@ -204,14 +300,9 @@ class ConfigManager:
             if "extra_env" in settings:
                 raw_extra_env = settings.get("extra_env") or {}
                 if not isinstance(raw_extra_env, dict):
-                    raise ValueError("agents.extra_env must be a mapping")
+                    raise ValueError("Agent 的额外环境变量必须是对象。")
                 agent_cfg["extra_env"] = {str(key): str(value) for key, value in raw_extra_env.items()}
-            if "command_shell" in settings:
-                raw_command_shell = settings.get("command_shell")
-                if raw_command_shell in (None, "", {}):
-                    agent_cfg.pop("command_shell", None)
-                else:
-                    agent_cfg["command_shell"] = deepcopy(raw_command_shell)
+            agent_cfg.pop("command_shell", None)
 
             current_default = str(agent_cfg.get("default_model") or "").strip()
             models = [str(item).strip() for item in (agent_cfg.get("models") or []) if str(item or "").strip()]
@@ -243,7 +334,7 @@ class ConfigManager:
             if "verify_ssl" in settings:
                 hub_cfg["verify_ssl"] = bool(settings.get("verify_ssl"))
             if "timeout_seconds" in settings:
-                hub_cfg["timeout_seconds"] = float(settings.get("timeout_seconds"))
+                hub_cfg["timeout_seconds"] = int(settings.get("timeout_seconds"))
 
             self._write_config()
         return self.get_hub_config(hub_id)

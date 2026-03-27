@@ -23,5 +23,4 @@ class ReviewHub(ABC):
     def to_metadata(self) -> dict[str, str]:
         return {
             "id": self.hub_id,
-            "name": self.hub_id,
         }

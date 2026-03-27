@@ -31,14 +31,17 @@ class ConfigDrivenReviewAgent(ReviewAgent):
         self._config = ctx.config_manager.get_agent_config(self.agent_id)
         self._list_models_command = self._read_required_command("list_models_command")
         self._review_command = self._read_required_command("review_command")
-        global_command_shell = ctx.config_manager.get_command_shell_config()
-        self._command_shell = self._parse_command_shell(global_command_shell or self._config.get("command_shell"))
+        self._command_shell = self._parse_command_shell(ctx.config_manager.get_command_shell_config())
         self._extra_env = {str(k): str(v) for k, v in (self._config.get("extra_env") or {}).items()}
 
     def get_model_catalog(self) -> AgentModelCatalog:
         models = self._load_config_models()
         if not models:
-            return AgentModelCatalog(models=[], source="config", error="当前 Agent 还没有配置模型，请先点击刷新模型")
+            return AgentModelCatalog(
+                models=[],
+                source="config",
+                error="当前 Agent 还没有可用模型，请先到系统设置中拉取并保存模型列表。",
+            )
         return AgentModelCatalog(models=[ModelChoice(model_id=item) for item in models], source="config")
 
     def refresh_model_catalog(self) -> AgentModelCatalog:
@@ -109,7 +112,7 @@ class ConfigDrivenReviewAgent(ReviewAgent):
         agent_config = self._ctx.config_manager.get_agent_config(self.agent_id)
         raw_models = agent_config.get("models") or []
         if not isinstance(raw_models, list):
-            raise ValueError(f"agents.{self.agent_id}.models must be a list")
+            raise ValueError(f"Agent {self.agent_id} 的模型列表必须是数组。")
 
         seen: set[str] = set()
         models: list[str] = []

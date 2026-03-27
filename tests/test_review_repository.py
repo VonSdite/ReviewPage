@@ -77,6 +77,58 @@ class ReviewRepositoryTestCase(unittest.TestCase):
         self.assertEqual(first_page["records"][0]["model_id"], "provider/model-5")
         self.assertEqual(second_page["records"][0]["model_id"], "provider/model-3")
 
+    def test_rename_agent_updates_existing_review_records(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "review.db"
+            repository = ReviewRepository(create_connection_factory(db_path))
+
+            first = repository.create_review(
+                mr_url="https://gitlab.example.com/group/project/-/merge_requests/1",
+                hub_id="gitlab",
+                agent_id="opencode",
+                model_id="provider/model-a",
+            )
+            second = repository.create_review(
+                mr_url="https://gitlab.example.com/group/project/-/merge_requests/2",
+                hub_id="gitlab",
+                agent_id="opencode",
+                model_id="provider/model-b",
+            )
+
+            updated_count = repository.rename_agent("opencode", "codex")
+            first_detail = repository.get_review(int(first["id"]))
+            second_detail = repository.get_review(int(second["id"]))
+
+        self.assertEqual(updated_count, 2)
+        self.assertEqual(first_detail["agent_id"], "codex")
+        self.assertEqual(second_detail["agent_id"], "codex")
+
+    def test_rename_hub_updates_existing_review_records(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "review.db"
+            repository = ReviewRepository(create_connection_factory(db_path))
+
+            first = repository.create_review(
+                mr_url="https://gitlab.example.com/group/project/-/merge_requests/1",
+                hub_id="gitlab",
+                agent_id="opencode",
+                model_id="provider/model-a",
+            )
+            second = repository.create_review(
+                mr_url="https://gitlab.example.com/group/project/-/merge_requests/2",
+                hub_id="gitlab",
+                agent_id="opencode",
+                model_id="provider/model-b",
+            )
+
+            updated_count = repository.rename_hub("gitlab", "gitlab-public")
+            first_detail = repository.get_review(int(first["id"]))
+            second_detail = repository.get_review(int(second["id"]))
+
+        self.assertEqual(updated_count, 2)
+        self.assertEqual(first_detail["hub_id"], "gitlab-public")
+        self.assertEqual(second_detail["hub_id"], "gitlab-public")
+
 
 if __name__ == "__main__":
     unittest.main()

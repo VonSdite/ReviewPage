@@ -31,7 +31,6 @@ class ReviewAgent(ABC):
         catalog = self.get_model_catalog()
         return {
             "id": self.agent_id,
-            "name": self.agent_id,
             "models": [item.to_dict() for item in catalog.models],
             "default_model_id": self.get_default_model_id(),
             "model_source": catalog.source,

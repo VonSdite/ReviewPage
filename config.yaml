@@ -10,8 +10,16 @@ workspace:
   temp_root: data/tmp/reviews
 queue:
   poll_interval_seconds: 2
+# 可选：统一指定 Agent 命令使用的 shell。
+# 直接写成字符串时，等价于使用该可执行程序并默认追加 args: ["-lc"]。
+# command_shell: bash
+#
+# 也可以写成完整映射：
+# command_shell:
+#   executable: bash
+#   args:
+#   - -lc
 hubs:
-  default: gitlab_public
   gitlab_public:
     type: gitlab
     web_base_url: https://gitlab.example.com
@@ -20,8 +28,8 @@ hubs:
     clone_url_preference: http
     verify_ssl: true
     timeout_seconds: 20
+  default: gitlab_public
 agents:
-  default: opencode
   opencode:
     list_models_command: opencode models
     review_command: opencode run --model "{model}" "/review {review_url}"
@@ -31,13 +39,6 @@ agents:
     - opencode/mimo-v2-flash-free
     - opencode/minimax-m2.5-free
     - opencode/nemotron-3-super-free
-    - proxy/volc_code/DeepSeek-V3.2
-    - proxy/volc_code/Doubao-Seed-2.0-Code
-    - proxy/volc_code/Doubao-Seed-2.0-pro
-    - proxy/volc_code/GLM-4.7
-    - proxy/volc_code/kimi-k2.5
-    - proxy/volc_code/MiniMax-M2.5
-    - volcengine/ark-code-latest
-    - volcengine/kimi-k2.5
     extra_env: {}
-    default_model: proxy/volc_code/kimi-k2.5
+    default_model: opencode/big-pickle
+  default: opencode

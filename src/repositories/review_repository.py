@@ -248,6 +248,32 @@ class ReviewRepository:
                 (result_text, error_message, now, now, review_id),
             )
 
+    def rename_agent(self, agent_id: str, new_agent_id: str) -> int:
+        now = _utc_now()
+        with self._connection_factory() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE review_records
+                SET agent_id = ?, updated_at = ?
+                WHERE agent_id = ?
+                """,
+                (new_agent_id, now, agent_id),
+            )
+            return int(cursor.rowcount or 0)
+
+    def rename_hub(self, hub_id: str, new_hub_id: str) -> int:
+        now = _utc_now()
+        with self._connection_factory() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE review_records
+                SET hub_id = ?, updated_at = ?
+                WHERE hub_id = ?
+                """,
+                (new_hub_id, now, hub_id),
+            )
+            return int(cursor.rowcount or 0)
+
     def list_reviews(self, page: int = 1, page_size: int = 50) -> dict[str, Any]:
         page = max(int(page), 1)
         page_size = max(int(page_size), 1)

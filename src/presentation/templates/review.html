@@ -1,18 +1,29 @@
 {% extends "base_page.html" %}
 
 {% block page_title %}MR 检视{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260324-17">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260327-17">{% endblock %}
 {% block body_class %}review-page{% endblock %}
 
 {% block body %}
 <div class="page-shell">
     <div class="page-frame">
         <header class="page-topbar">
+            <div class="page-topbar-content">
             <div class="topbar-copy">
                 <h1 id="pageTopbarTitle">MR 检视中心</h1>
                 <p class="topbar-summary" id="pageTopbarSummary">代码检视、查看历史</p>
             </div>
-            <div class="page-tab-nav" role="tablist" aria-label="页面导航">
+            <div class="page-topbar-actions">
+                <button type="button" class="theme-toggle page-theme-toggle" id="themeToggle" aria-label="切换主题" title="切换主题">
+                    <svg class="theme-icon-sun" viewBox="0 0 24 24" stroke-width="1.8">
+                        <circle cx="12" cy="12" r="4"></circle>
+                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M19.07 4.93l-2.12 2.12M7.05 16.95l-2.12 2.12"></path>
+                    </svg>
+                    <svg class="theme-icon-moon" viewBox="0 0 24 24" stroke-width="1.8">
+                        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8z"></path>
+                    </svg>
+                </button>
+                <div class="page-tab-nav" role="tablist" aria-label="页面导航">
                 <button
                     type="button"
                     class="secondary-button is-active page-tab-button"
@@ -34,15 +45,8 @@
                     系统设置
                 </button>
 
-                <button type="button" class="theme-toggle" id="themeToggle" aria-label="切换主题" title="切换主题">
-                    <svg class="theme-icon-sun" viewBox="0 0 24 24" stroke-width="1.8">
-                        <circle cx="12" cy="12" r="4"></circle>
-                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M19.07 4.93l-2.12 2.12M7.05 16.95l-2.12 2.12"></path>
-                    </svg>
-                    <svg class="theme-icon-moon" viewBox="0 0 24 24" stroke-width="1.8">
-                        <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8z"></path>
-                    </svg>
-                </button>
+                </div>
+            </div>
             </div>
         </header>
 
@@ -64,7 +68,7 @@
 
                             <div class="form-inline-row">
                                 <div class="form-field">
-                                    <label for="hubSelect">平台</label>
+                                    <label for="hubSelect">平台名称</label>
                                     <select id="hubSelect" name="hub_id"></select>
                                     <div class="form-field-actions">
                                         <button type="button" class="field-link-button" id="hubSetDefaultQuickButton">设为默认</button>
@@ -72,7 +76,7 @@
                                 </div>
 
                                 <div class="form-field">
-                                    <label for="agentSelect">Agent</label>
+                                    <label for="agentSelect">Agent名称</label>
                                     <select id="agentSelect" name="agent_id"></select>
                                     <div class="form-field-actions">
                                         <button type="button" class="field-link-button" id="agentSetDefaultQuickButton">设为默认</button>
@@ -116,8 +120,9 @@
                                     <thead>
                                         <tr>
                                             <th class="col-mr">MR</th>
-                                            <th class="col-hub">平台</th>
-                                            <th class="col-agent">Agent / 模型</th>
+                                            <th class="col-hub">平台名称</th>
+                                            <th class="col-agent">Agent名称</th>
+                                            <th class="col-model">模型</th>
                                             <th class="col-status">状态</th>
                                             <th class="col-time">时间</th>
                                             <th class="col-actions">操作</th>
@@ -125,7 +130,7 @@
                                     </thead>
                                     <tbody id="recordsTableBody">
                                         <tr>
-                                            <td colspan="6" class="empty-row">正在加载检视记录...</td>
+                                            <td colspan="7" class="empty-row">正在加载检视记录...</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -164,186 +169,361 @@
             id="pagePanelSettings"
             data-page-panel="settings"
             data-page-title="系统设置"
-            data-page-summary="设置Agent\平台"
+            data-page-summary="设置 Agent / 平台"
             hidden
         >
-            <section class="panel-card settings-shell">
-                <div class="settings-tab-nav" role="tablist" aria-label="设置导航">
-                    <button
-                        type="button"
-                        class="secondary-button is-active settings-tab-button"
-                        data-settings-tab-target="agents"
-                        role="tab"
-                        aria-selected="true"
-                    >
-                        Agent 配置
-                    </button>
-                    <button
-                        type="button"
-                        class="secondary-button settings-tab-button"
-                        data-settings-tab-target="hubs"
-                        role="tab"
-                        aria-selected="false"
-                    >
-                        平台配置
-                    </button>
-                </div>
+            <section class="settings-shell">
+                <section class="panel-card settings-section-panel" id="settingsPanelAgents">
+                    <div class="panel-head">
+                        <div class="settings-section-copy">
+                            <h2>Agent 列表</h2>
+                        </div>
+                        <div class="settings-section-actions">
+                            <button type="button" class="primary-button" id="agentCreateButton">新增</button>
+                        </div>
+                    </div>
 
-                <section class="settings-tab-panel" id="settingsPanelAgents" data-settings-panel="agents">
-                    <div class="settings-grid">
-                        <aside class="settings-sidebar">
-                            <div class="settings-sidebar-head">
-                                <h3>Agent 实例</h3>
-                                <p>选择一个 Agent 后编辑命令、模型与默认项。</p>
+                    <div class="table-wrap">
+                        <div class="table-scroll">
+                            <table class="records-table settings-table settings-table-agents">
+                                <thead>
+                                    <tr>
+                                        <th>Agent 名称</th>
+                                        <th>默认模型</th>
+                                        <th>模型数</th>
+                                        <th>拉模型命令</th>
+                                        <th>检视命令</th>
+                                        <th class="col-actions">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="agentSettingsList"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="table-footer" id="agentTableFooter" style="display: none;">
+                        <div class="right-controls">
+                            <div class="pagination-controls">
+                                <span id="agentPrevBtn" class="page-nav-text disabled" role="button" tabindex="0" aria-label="上一页">&lt;</span>
+                                <span class="page-info" id="agentPageInfo">第 1 页 / 共 1 页</span>
+                                <span id="agentNextBtn" class="page-nav-text disabled" role="button" tabindex="0" aria-label="下一页">&gt;</span>
                             </div>
-                            <div class="settings-entity-list" id="agentSettingsList"></div>
-                        </aside>
-
-                        <div class="settings-editor">
-                            <form id="agentSettingsForm" class="settings-form">
-                                <div class="settings-editor-head">
-                                    <div>
-                                        <p class="settings-editor-kicker">Agent 配置</p>
-                                        <h3 id="agentSettingsTitle">-</h3>
-                                        <div class="settings-editor-meta">
-                                            <span class="status-pill status-queued" id="agentDefaultPill" hidden>默认智能体</span>
-                                        </div>
-                                    </div>
-                                    <div class="settings-editor-actions">
-                                        <button type="button" class="secondary-button" id="agentSetDefaultButton">设为默认智能体</button>
-                                        <button type="button" class="secondary-button" id="agentRefreshModelsButton">拉取新模型</button>
-                                        <button type="submit" class="primary-button" id="agentSaveButton">保存 Agent 配置</button>
-                                    </div>
-                                </div>
-
-                                <div class="settings-form-grid">
-                                    <div class="form-field">
-                                        <label for="agentSettingsId">智能体 ID</label>
-                                        <input id="agentSettingsId" type="text" readonly>
-                                    </div>
-
-                                    <div class="form-field">
-                                        <label for="agentDefaultModelSelect">默认模型</label>
-                                        <select id="agentDefaultModelSelect"></select>
-                                    </div>
-
-                                    <div class="form-field settings-form-span-2">
-                                        <label for="agentListModelsCommandInput">列模型命令</label>
-                                        <input id="agentListModelsCommandInput" type="text" placeholder="opencode models">
-                                    </div>
-
-                                    <div class="form-field settings-form-span-2">
-                                        <label for="agentReviewCommandInput">检视命令</label>
-                                        <input id="agentReviewCommandInput" type="text" placeholder="opencode run --model &quot;{model}&quot; &quot;/review {review_url}&quot;">
-                                    </div>
-
-                                    <div class="form-field">
-                                        <label for="agentCommandShellExecutableInput">专用 Shell 可执行文件</label>
-                                        <input id="agentCommandShellExecutableInput" type="text" placeholder="留空表示使用全局 command_shell">
-                                    </div>
-
-                                    <div class="form-field">
-                                        <label for="agentCommandShellArgsInput">专用 Shell 参数</label>
-                                        <textarea id="agentCommandShellArgsInput" rows="3" placeholder="-lc&#10;--login"></textarea>
-                                    </div>
-
-                                    <div class="form-field settings-form-span-2">
-                                        <label for="agentModelsTextarea">模型列表</label>
-                                        <textarea id="agentModelsTextarea" rows="10" placeholder="一行一个模型 ID"></textarea>
-                                    </div>
-
-                                    <div class="form-field settings-form-span-2">
-                                        <label for="agentExtraEnvTextarea">额外环境变量</label>
-                                        <textarea id="agentExtraEnvTextarea" rows="7" placeholder='{"HTTP_PROXY":"http://127.0.0.1:7890"}'></textarea>
-                                    </div>
-                                </div>
-
-                                <div class="field-hint" id="agentSettingsHint">保存前会校验基础字段；拉取新模型会先保存当前 Agent 配置。</div>
-                            </form>
+                            <div class="quick-jump">
+                                <label for="agentPageJumpInput">跳至</label>
+                                <input id="agentPageJumpInput" type="number" min="1" value="1">
+                            </div>
+                            <div class="page-size-controls">
+                                <label for="agentPageSizeSelect">每页显示:</label>
+                                <select id="agentPageSizeSelect">
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                </select>
+                            </div>
+                            <span class="total-count" id="agentTotalCount">共 0 条</span>
                         </div>
                     </div>
                 </section>
 
-                <section class="settings-tab-panel" id="settingsPanelHubs" data-settings-panel="hubs" hidden>
-                    <div class="settings-grid">
-                        <aside class="settings-sidebar">
-                            <div class="settings-sidebar-head">
-                                <h3>平台实例</h3>
-                                <p>同一种平台类型可以配置多个实例，只改 URL 和令牌即可。</p>
+                <section class="panel-card settings-section-panel" id="settingsPanelHubs">
+                    <div class="panel-head">
+                        <div class="settings-section-copy">
+                            <h2>平台列表</h2>
+                        </div>
+                        <div class="settings-section-actions">
+                            <button type="button" class="primary-button" id="hubCreateButton">新增</button>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <div class="table-scroll">
+                            <table class="records-table settings-table settings-table-hubs">
+                                <thead>
+                                    <tr>
+                                        <th>平台名称</th>
+                                        <th>类型</th>
+                                        <th>网页地址</th>
+                                        <th>API 地址</th>
+                                        <th class="col-actions">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="hubSettingsList"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="table-footer" id="hubTableFooter" style="display: none;">
+                        <div class="right-controls">
+                            <div class="pagination-controls">
+                                <span id="hubPrevBtn" class="page-nav-text disabled" role="button" tabindex="0" aria-label="上一页">&lt;</span>
+                                <span class="page-info" id="hubPageInfo">第 1 页 / 共 1 页</span>
+                                <span id="hubNextBtn" class="page-nav-text disabled" role="button" tabindex="0" aria-label="下一页">&gt;</span>
                             </div>
-                            <div class="settings-entity-list" id="hubSettingsList"></div>
-                        </aside>
-
-                        <div class="settings-editor">
-                            <form id="hubSettingsForm" class="settings-form">
-                                <div class="settings-editor-head">
-                                    <div>
-                                        <p class="settings-editor-kicker">平台配置</p>
-                                        <h3 id="hubSettingsTitle">-</h3>
-                                        <div class="settings-editor-meta">
-                                            <span class="status-pill status-queued" id="hubDefaultPill" hidden>默认平台</span>
-                                            <span class="status-pill" id="hubTypePill">类型: -</span>
-                                        </div>
-                                    </div>
-                                    <div class="settings-editor-actions">
-                                        <button type="button" class="secondary-button" id="hubSetDefaultButton">设为默认平台</button>
-                                        <button type="submit" class="primary-button" id="hubSaveButton">保存平台配置</button>
-                                    </div>
-                                </div>
-
-                                <div class="settings-form-grid">
-                                    <div class="form-field">
-                                        <label for="hubSettingsId">平台 ID</label>
-                                        <input id="hubSettingsId" type="text" readonly>
-                                    </div>
-
-                                    <div class="form-field">
-                                        <label for="hubTypeSelect">平台类型</label>
-                                        <select id="hubTypeSelect"></select>
-                                    </div>
-
-                                    <div class="form-field settings-form-span-2">
-                                        <label for="hubWebBaseUrlInput">网页基地址</label>
-                                        <input id="hubWebBaseUrlInput" type="url" placeholder="https://gitlab.example.com">
-                                    </div>
-
-                                    <div class="form-field settings-form-span-2">
-                                        <label for="hubApiBaseUrlInput">API 基地址</label>
-                                        <input id="hubApiBaseUrlInput" type="url" placeholder="https://gitlab.example.com/api/v4">
-                                    </div>
-
-                                    <div class="form-field">
-                                        <label for="hubPrivateTokenInput">访问令牌</label>
-                                        <input id="hubPrivateTokenInput" type="password" autocomplete="off" placeholder="留空表示不设置">
-                                    </div>
-
-                                    <div class="form-field">
-                                        <label for="hubClonePreferenceSelect">仓库地址偏好</label>
-                                        <select id="hubClonePreferenceSelect">
-                                            <option value="http">http</option>
-                                            <option value="ssh">ssh</option>
-                                        </select>
-                                    </div>
-
-                                    <div class="form-field">
-                                        <label for="hubTimeoutInput">请求超时秒数</label>
-                                        <input id="hubTimeoutInput" type="number" min="1" step="1" placeholder="20">
-                                    </div>
-
-                                    <div class="form-field checkbox-field">
-                                        <label class="checkbox-label" for="hubVerifySslInput">
-                                            <input id="hubVerifySslInput" type="checkbox">
-                                            <span>验证 SSL 证书</span>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <div class="field-hint" id="hubSettingsHint">平台的 `type` 决定使用哪个实现类，保存后会立即重建运行时实例。</div>
-                            </form>
+                            <div class="quick-jump">
+                                <label for="hubPageJumpInput">跳至</label>
+                                <input id="hubPageJumpInput" type="number" min="1" value="1">
+                            </div>
+                            <div class="page-size-controls">
+                                <label for="hubPageSizeSelect">每页显示:</label>
+                                <select id="hubPageSizeSelect">
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="200">200</option>
+                                </select>
+                            </div>
+                            <span class="total-count" id="hubTotalCount">共 0 条</span>
                         </div>
                     </div>
                 </section>
             </section>
+        </section>
+    </div>
+</div>
+
+<div class="detail-modal" id="agentSettingsModal" hidden>
+    <div class="detail-modal-backdrop"></div>
+    <div class="detail-modal-dialog settings-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="agentSettingsTitle">
+        <section class="detail-modal-card">
+            <div class="panel-head panel-head-tight">
+                <div class="detail-modal-heading settings-modal-heading">
+                    <h2 id="agentSettingsTitle">-</h2>
+                </div>
+                <div class="detail-modal-actions">
+                    <button
+                        type="submit"
+                        form="agentSettingsForm"
+                        class="primary-button settings-header-submit-button"
+                        id="agentSaveButton"
+                    >
+                        保存
+                    </button>
+                    <button
+                        type="button"
+                        class="secondary-button detail-close-button"
+                        data-close-agent-settings-modal
+                        aria-label="关闭 Agent 配置"
+                        title="关闭"
+                    >
+                        ×
+                    </button>
+                </div>
+            </div>
+
+            <div class="detail-content settings-modal-content">
+                <form id="agentSettingsForm" class="settings-form">
+                    <div class="settings-form-grid">
+                        <div class="form-field">
+                            <label for="agentSettingsId">Agent 名称<span class="form-required-mark">*</span></label>
+                            <input id="agentSettingsId" type="text" placeholder="请输入 Agent 名称，例如：opencode">
+                        </div>
+
+                        <div class="form-field">
+                            <label for="agentListModelsCommandInput">拉模型命令<span class="form-required-mark">*</span></label>
+                            <input id="agentListModelsCommandInput" type="text" placeholder="用于拉取模型列表，例如：opencode models">
+                        </div>
+
+                        <div class="form-field settings-form-span-2">
+                            <label for="agentReviewCommandInput">检视命令<span class="form-required-mark">*</span></label>
+                            <input id="agentReviewCommandInput" type="text" placeholder="使用 {model} 和 {review_url} 占位，例如：opencode run --model &quot;{model}&quot; &quot;/review {review_url}&quot;">
+                        </div>
+
+                        <div class="form-field settings-form-span-2 settings-models-field">
+                            <div class="settings-models-field-head">
+                                <label for="agentModelsTextarea">模型列表</label>
+                                <div class="settings-models-field-actions">
+                                    <div class="settings-model-default-inline">
+                                        <label for="agentDefaultModelSelect">默认模型</label>
+                                        <select id="agentDefaultModelSelect"></select>
+                                    </div>
+                                    <button type="button" class="field-link-button" id="agentRefreshModelsButton">拉取模型</button>
+                                </div>
+                            </div>
+                            <textarea id="agentModelsTextarea" rows="10" placeholder="可手动填写模型 ID，每行一个；也可点击右侧“拉取模型”自动获取"></textarea>
+                        </div>
+
+                        <div class="form-field settings-form-span-2">
+                            <label for="agentExtraEnvTextarea">额外环境变量</label>
+                            <textarea id="agentExtraEnvTextarea" rows="7" placeholder='可选，填写 JSON 对象，例如：{"HTTP_PROXY":"http://127.0.0.1:7890"}'></textarea>
+                        </div>
+                    </div>
+
+                </form>
+            </div>
+        </section>
+    </div>
+</div>
+
+<div class="detail-modal" id="hubSettingsModal" hidden>
+    <div class="detail-modal-backdrop"></div>
+    <div class="detail-modal-dialog settings-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="hubSettingsTitle">
+        <section class="detail-modal-card">
+            <div class="panel-head panel-head-tight">
+                <div class="detail-modal-heading settings-modal-heading">
+                    <h2 id="hubSettingsTitle">-</h2>
+                </div>
+                <div class="detail-modal-actions">
+                    <button
+                        type="submit"
+                        form="hubSettingsForm"
+                        class="primary-button settings-header-submit-button"
+                        id="hubSaveButton"
+                    >
+                        保存
+                    </button>
+                    <button
+                        type="button"
+                        class="secondary-button detail-close-button"
+                        data-close-hub-settings-modal
+                        aria-label="关闭平台配置"
+                        title="关闭"
+                    >
+                        ×
+                    </button>
+                </div>
+            </div>
+
+            <div class="detail-content settings-modal-content">
+                <form id="hubSettingsForm" class="settings-form">
+                    <div class="settings-form-grid">
+                        <div class="form-field">
+                            <label for="hubSettingsId">平台名称<span class="form-required-mark">*</span></label>
+                            <input id="hubSettingsId" type="text" placeholder="请输入平台名称，例如：gitlab_public">
+                        </div>
+
+                        <div class="form-field">
+                            <label for="hubTypeSelect">平台类型<span class="form-required-mark">*</span></label>
+                            <select id="hubTypeSelect"></select>
+                        </div>
+
+                        <div class="form-field settings-form-span-2">
+                            <label for="hubWebBaseUrlInput">网页基地址</label>
+                            <input id="hubWebBaseUrlInput" type="url" placeholder="平台网页访问地址，例如：https://gitlab.example.com">
+                        </div>
+
+                        <div class="form-field settings-form-span-2">
+                            <label for="hubApiBaseUrlInput">API 基地址<span class="form-required-mark" id="hubApiBaseUrlRequiredMark">*</span></label>
+                            <input id="hubApiBaseUrlInput" type="url" placeholder="平台 API 地址，例如：https://gitlab.example.com/api/v4">
+                        </div>
+
+                        <div class="form-field">
+                            <label for="hubPrivateTokenInput">访问令牌</label>
+                            <input id="hubPrivateTokenInput" type="password" autocomplete="off" placeholder="可选；留空表示不设置或不修改">
+                        </div>
+
+                        <div class="form-field">
+                            <label for="hubClonePreferenceSelect">仓库地址偏好</label>
+                            <select id="hubClonePreferenceSelect">
+                                <option value="http">http</option>
+                                <option value="ssh">ssh</option>
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="hubTimeoutInput">请求超时秒数</label>
+                            <input id="hubTimeoutInput" type="number" min="1" step="1" placeholder="请求超时时间，单位秒，例如：20">
+                        </div>
+
+                        <div class="form-field checkbox-field">
+                            <label class="checkbox-label" for="hubVerifySslInput">
+                                <input id="hubVerifySslInput" type="checkbox">
+                                <span>验证 SSL 证书</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="field-hint" id="hubSettingsHint" hidden></div>
+                </form>
+            </div>
+        </section>
+    </div>
+</div>
+
+<div class="detail-modal agent-fetch-models-modal" id="agentFetchModelsModal" hidden>
+    <div class="detail-modal-backdrop" data-close-agent-fetch-models-modal></div>
+    <div class="detail-modal-dialog agent-fetch-models-dialog" role="dialog" aria-modal="true" aria-labelledby="agentFetchModelsTitle">
+        <section class="detail-modal-card">
+            <div class="panel-head panel-head-tight">
+                <div class="detail-modal-heading agent-fetch-models-heading">
+                    <div>
+                        <h2 id="agentFetchModelsTitle">选择模型</h2>
+                        <p class="agent-fetch-models-subtitle" id="agentFetchModelsSubtitle" hidden></p>
+                    </div>
+                </div>
+                <div class="detail-modal-actions">
+                    <button
+                        type="button"
+                        class="secondary-button detail-close-button"
+                        data-close-agent-fetch-models-modal
+                        aria-label="关闭模型选择"
+                        title="关闭"
+                    >
+                        脳
+                    </button>
+                </div>
+            </div>
+
+            <div class="detail-content agent-fetch-models-content">
+                <div class="form-field">
+                    <label for="agentFetchModelSearchInput">搜索模型</label>
+                    <input id="agentFetchModelSearchInput" type="text" placeholder="按模型 ID 搜索">
+                </div>
+
+                <div class="agent-fetch-models-summary" id="agentFetchModelSummary">共拉取 0 个模型，已选 0 个</div>
+
+                <div class="agent-fetch-models-list">
+                    <div class="agent-fetch-models-list-header">
+                        <label class="agent-fetch-models-list-header-main" for="agentFetchModelSelectAllCheckbox">
+                            <input type="checkbox" class="agent-fetch-model-checkbox" id="agentFetchModelSelectAllCheckbox">
+                            <span class="agent-fetch-models-list-header-title">模型名称</span>
+                        </label>
+                        <span class="agent-fetch-models-list-header-hint">仅本次拉取结果参与增删，现有未命中的模型会保留</span>
+                    </div>
+                    <div class="agent-fetch-models-list-body" id="agentFetchModelListBody"></div>
+                </div>
+
+                <div class="settings-editor-actions agent-fetch-models-footer">
+                    <button type="button" class="secondary-button" data-close-agent-fetch-models-modal>取消</button>
+                    <button type="button" class="primary-button" id="agentApplyFetchedModelsButton">应用到当前清单</button>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<div class="detail-modal agent-model-list-modal" id="agentModelListModal" hidden>
+    <div class="detail-modal-backdrop" data-close-agent-model-list-modal></div>
+    <div class="detail-modal-dialog agent-model-list-dialog" role="dialog" aria-modal="true" aria-labelledby="agentModelListTitle">
+        <section class="detail-modal-card">
+            <div class="panel-head panel-head-tight">
+                <div class="detail-modal-heading agent-model-list-heading">
+                    <div>
+                        <h2 id="agentModelListTitle">当前模型列表</h2>
+                        <p class="agent-model-list-subtitle" id="agentModelListSubtitle" hidden></p>
+                    </div>
+                </div>
+                <div class="detail-modal-actions">
+                    <button
+                        type="button"
+                        class="secondary-button detail-close-button"
+                        data-close-agent-model-list-modal
+                        aria-label="关闭当前模型列表"
+                        title="关闭"
+                    >
+                        脳
+                    </button>
+                </div>
+            </div>
+
+            <div class="detail-content agent-model-list-content">
+                <div class="form-field">
+                    <label for="agentModelListSearchInput">搜索模型</label>
+                    <input id="agentModelListSearchInput" type="text" placeholder="按模型 ID 搜索">
+                </div>
+
+                <div class="agent-model-list-summary" id="agentModelListSummary">共 0 个模型</div>
+
+                <div class="agent-model-list-body" id="agentModelListBody"></div>
+            </div>
         </section>
     </div>
 </div>
@@ -379,11 +559,11 @@
                         <dd><a id="detailMrUrl" href="#" target="_blank" rel="noreferrer">-</a></dd>
                     </div>
                     <div class="detail-item">
-                        <dt>平台</dt>
+                        <dt>平台名称</dt>
                         <dd id="detailHub">-</dd>
                     </div>
                     <div class="detail-item">
-                        <dt>Agent</dt>
+                        <dt>Agent名称</dt>
                         <dd id="detailAgent">-</dd>
                     </div>
                     <div class="detail-item">
@@ -430,10 +610,18 @@
     </div>
 </div>
 
+<div class="inline-confirm-popover floating-delete-popover" id="settingsDeletePopover" data-placement="bottom" hidden>
+    <div class="inline-confirm-text" id="settingsDeleteConfirmText">删除？</div>
+    <div class="inline-confirm-actions">
+        <button type="button" class="table-action-button inline-confirm-action" id="settingsDeleteCancelButton">取消</button>
+        <button type="button" class="table-action-button table-action-button-danger inline-confirm-action" id="settingsDeleteConfirmButton">确认</button>
+    </div>
+</div>
+
 <div class="toast-stack" id="toastStack" aria-live="polite" aria-atomic="true"></div>
 {% endblock %}
 
 {% block page_scripts %}
-<script src="/static/js/review.js?v=20260325-1"></script>
+<script src="/static/js/review.js?v=20260327-12"></script>
 
 {% endblock %}

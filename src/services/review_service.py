@@ -4,14 +4,17 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import shutil
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable
 
 from ..application.app_context import AppContext
 from ..domain import ReviewAgent, ReviewHub, get_registered_hub_types
 from ..integrations import build_config_driven_agents, build_configured_hubs
+from ..integrations.agents import ConfigDrivenReviewAgent
 from ..utils import format_command, stream_command
 
 
@@ -37,11 +40,11 @@ class ReviewService:
         agents_meta = [agent.to_metadata() for agent in self._agents.values()]
         hubs_meta = [hub.to_metadata() for hub in self._hubs.values()]
         return {
-            "agents": sorted(agents_meta, key=lambda item: item["name"]),
-            "hubs": sorted(hubs_meta, key=lambda item: item["name"]),
+            "agents": sorted(agents_meta, key=lambda item: str(item["id"])),
+            "hubs": sorted(hubs_meta, key=lambda item: str(item["id"])),
             "defaults": {
-                "agent_id": self._config_manager.get_default_agent_id(),
-                "hub_id": self._config_manager.get_default_hub_id(),
+                "agent_id": self._config_manager.get_configured_default_agent_id(),
+                "hub_id": self._config_manager.get_configured_default_hub_id(),
             },
         }
 
@@ -50,28 +53,32 @@ class ReviewService:
         hubs = [self._serialize_hub_settings(hub_id) for hub_id in sorted(self._hubs)]
         return {
             "defaults": {
-                "agent_id": self._config_manager.get_default_agent_id(),
-                "hub_id": self._config_manager.get_default_hub_id(),
+                "agent_id": self._config_manager.get_configured_default_agent_id(),
+                "hub_id": self._config_manager.get_configured_default_hub_id(),
             },
-            "agents": sorted(agents, key=lambda item: str(item["name"])),
-            "hubs": sorted(hubs, key=lambda item: str(item["name"])),
+            "agents": sorted(agents, key=lambda item: str(item["id"])),
+            "hubs": sorted(hubs, key=lambda item: str(item["id"])),
             "hub_types": sorted(get_registered_hub_types()),
         }
 
     def create_review(self, payload: dict[str, object]) -> dict[str, object]:
         mr_url = str(payload.get("mr_url") or "").strip()
-        hub_id = str(payload.get("hub_id") or self._config_manager.get_default_hub_id()).strip()
-        agent_id = str(payload.get("agent_id") or self._config_manager.get_default_agent_id()).strip()
-        model_id = str(payload.get("model_id") or self._config_manager.get_agent_default_model_id(agent_id) or "").strip()
+        hub_id = str(payload.get("hub_id") or "").strip()
+        agent_id = str(payload.get("agent_id") or "").strip()
+        model_id = str(payload.get("model_id") or "").strip()
 
         if not mr_url:
             raise ValueError("MR 检视地址不能为空")
+        if not hub_id:
+            raise ValueError("平台不能为空")
+        if not agent_id:
+            raise ValueError("Agent 不能为空")
+        if not model_id:
+            raise ValueError("模型不能为空")
         if agent_id not in self._agents:
             raise ValueError(f"未注册的 Agent：{agent_id}")
         if hub_id not in self._hubs:
             raise ValueError(f"未注册的 Hub：{hub_id}")
-        if not model_id:
-            raise ValueError("模型不能为空")
 
         agent = self._agents[agent_id]
         hub = self._hubs[hub_id]
@@ -132,6 +139,37 @@ class ReviewService:
         agent.refresh_model_catalog()
         return self._serialize_agent_settings(agent_id)
 
+    def fetch_agent_models_preview(self, agent_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+        if payload is not None:
+            preview_agent_id = self._normalize_settings_entity_id(payload.get("agent_id") or agent_id, "Agent")
+            settings = self._normalize_agent_model_preview_payload(payload)
+            catalog = self._build_preview_agent(preview_agent_id, settings).refresh_model_catalog()
+            fetched_models = [item.model_id for item in catalog.models]
+            return {
+                "agent_id": preview_agent_id,
+                "fetched_models": fetched_models,
+            }
+
+        agent = self._agents.get(agent_id)
+        if agent is None:
+            raise ValueError(f"未注册的 Agent：{agent_id}")
+
+        previous_config = self._config_manager.get_raw_config()
+        try:
+            catalog = agent.refresh_model_catalog()
+            fetched_models = [item.model_id for item in catalog.models]
+        except Exception:
+            self._config_manager.replace_raw_config(previous_config)
+            self._reload_integrations()
+            raise
+
+        self._config_manager.replace_raw_config(previous_config)
+        self._reload_integrations()
+        return {
+            "agent_id": agent_id,
+            "fetched_models": fetched_models,
+        }
+
     def set_agent_default_model(self, agent_id: str, model_id: str) -> dict[str, object]:
         agent = self._agents.get(agent_id)
         if agent is None:
@@ -150,12 +188,38 @@ class ReviewService:
         return self._serialize_agent_settings(agent_id)
 
     def save_agent_settings(self, agent_id: str, payload: dict[str, object]) -> dict[str, object]:
-        if agent_id not in self._agents:
-            raise ValueError(f"未注册的 Agent：{agent_id}")
-
+        agent_id = self._normalize_settings_entity_id(agent_id, "Agent")
+        next_agent_id = self._normalize_settings_entity_id(payload.get("agent_id") or agent_id, "Agent")
         settings = self._normalize_agent_settings_payload(payload)
-        self._apply_config_change(lambda: self._config_manager.update_agent_settings(agent_id, settings))
-        return self._serialize_agent_settings(agent_id)
+        agent_exists = agent_id in self._agents
+        is_renaming = agent_exists and next_agent_id != agent_id
+        if not agent_exists and next_agent_id != agent_id:
+            raise ValueError("不能重命名一个不存在的 Agent")
+        if is_renaming and next_agent_id in self._agents:
+            raise ValueError(f"Agent 已存在：{next_agent_id}")
+
+        previous_config = self._config_manager.get_raw_config()
+        renamed_reviews = False
+        try:
+            if is_renaming:
+                self._config_manager.rename_agent(agent_id, next_agent_id)
+                self._config_manager.update_agent_settings(next_agent_id, settings)
+                self._review_repository.rename_agent(agent_id, next_agent_id)
+                renamed_reviews = True
+            else:
+                self._config_manager.update_agent_settings(agent_id, settings)
+            self._reload_integrations()
+        except Exception:
+            self._config_manager.replace_raw_config(previous_config)
+            if renamed_reviews:
+                self._review_repository.rename_agent(next_agent_id, agent_id)
+            self._reload_integrations()
+            raise
+
+        result = self._serialize_agent_settings(next_agent_id if is_renaming else agent_id)
+        if is_renaming:
+            result["previous_id"] = agent_id
+        return result
 
     def set_default_agent(self, agent_id: str) -> dict[str, object]:
         if agent_id not in self._agents:
@@ -167,13 +231,49 @@ class ReviewService:
             "hub_id": self._config_manager.get_default_hub_id(),
         }
 
-    def save_hub_settings(self, hub_id: str, payload: dict[str, object]) -> dict[str, object]:
-        if hub_id not in self._hubs:
-            raise ValueError(f"未注册的 Hub：{hub_id}")
+    def delete_agent_settings(self, agent_id: str) -> dict[str, object]:
+        if agent_id not in self._agents:
+            raise ValueError(f"未注册的 Agent：{agent_id}")
 
+        self._apply_config_change(lambda: self._config_manager.delete_agent(agent_id))
+        return {
+            "agent_id": self._config_manager.get_default_agent_id(),
+            "hub_id": self._config_manager.get_default_hub_id(),
+        }
+
+    def save_hub_settings(self, hub_id: str, payload: dict[str, object]) -> dict[str, object]:
+        hub_id = self._normalize_settings_entity_id(hub_id, "平台")
+        next_hub_id = self._normalize_settings_entity_id(payload.get("hub_id") or hub_id, "平台")
         settings = self._normalize_hub_settings_payload(payload)
-        self._apply_config_change(lambda: self._config_manager.update_hub_settings(hub_id, settings))
-        return self._serialize_hub_settings(hub_id)
+        hub_exists = hub_id in self._hubs
+        is_renaming = hub_exists and next_hub_id != hub_id
+        if not hub_exists and next_hub_id != hub_id:
+            raise ValueError("不能重命名一个不存在的平台")
+        if is_renaming and next_hub_id in self._hubs:
+            raise ValueError(f"平台已存在：{next_hub_id}")
+
+        previous_config = self._config_manager.get_raw_config()
+        renamed_reviews = False
+        try:
+            if is_renaming:
+                self._config_manager.rename_hub(hub_id, next_hub_id)
+                self._config_manager.update_hub_settings(next_hub_id, settings)
+                self._review_repository.rename_hub(hub_id, next_hub_id)
+                renamed_reviews = True
+            else:
+                self._config_manager.update_hub_settings(hub_id, settings)
+            self._reload_integrations()
+        except Exception:
+            self._config_manager.replace_raw_config(previous_config)
+            if renamed_reviews:
+                self._review_repository.rename_hub(next_hub_id, hub_id)
+            self._reload_integrations()
+            raise
+
+        result = self._serialize_hub_settings(next_hub_id if is_renaming else hub_id)
+        if is_renaming:
+            result["previous_id"] = hub_id
+        return result
 
     def set_default_hub(self, hub_id: str) -> dict[str, object]:
         if hub_id not in self._hubs:
@@ -183,6 +283,16 @@ class ReviewService:
         return {
             "agent_id": self._config_manager.get_default_agent_id(),
             "hub_id": hub_id,
+        }
+
+    def delete_hub_settings(self, hub_id: str) -> dict[str, object]:
+        if hub_id not in self._hubs:
+            raise ValueError(f"未注册的 Hub：{hub_id}")
+
+        self._apply_config_change(lambda: self._config_manager.delete_hub(hub_id))
+        return {
+            "agent_id": self._config_manager.get_default_agent_id(),
+            "hub_id": self._config_manager.get_default_hub_id(),
         }
 
     def reset_running_reviews(self) -> None:
@@ -335,21 +445,16 @@ class ReviewService:
         config = self._config_manager.get_agent_config(agent_id)
         raw_models = config.get("models") or []
         if not isinstance(raw_models, list):
-            raise ValueError(f"agents.{agent_id}.models must be a list")
-
-        command_shell = config.get("command_shell")
-        if command_shell is not None and not isinstance(command_shell, (str, dict)):
-            raise ValueError(f"agents.{agent_id}.command_shell must be a string or mapping")
+            raise ValueError(f"Agent {agent_id} 的模型列表必须是数组。")
 
         metadata = agent.to_metadata()
-        metadata["is_default"] = agent_id == self._config_manager.get_default_agent_id()
+        metadata["is_default"] = agent_id == self._config_manager.get_configured_default_agent_id()
         metadata["config"] = {
             "list_models_command": str(config.get("list_models_command") or ""),
             "review_command": str(config.get("review_command") or ""),
             "models": [str(item).strip() for item in raw_models if str(item or "").strip()],
             "default_model": str(config.get("default_model") or "").strip(),
             "extra_env": {str(key): str(value) for key, value in (config.get("extra_env") or {}).items()},
-            "command_shell": command_shell,
         }
         return metadata
 
@@ -358,7 +463,7 @@ class ReviewService:
         config = self._config_manager.get_hub_config(hub_id)
         metadata = hub.to_metadata()
         metadata["type"] = str(config.get("type") or "").strip()
-        metadata["is_default"] = hub_id == self._config_manager.get_default_hub_id()
+        metadata["is_default"] = hub_id == self._config_manager.get_configured_default_hub_id()
         metadata["config"] = {
             "type": str(config.get("type") or "").strip(),
             "web_base_url": str(config.get("web_base_url") or "").strip(),
@@ -366,34 +471,34 @@ class ReviewService:
             "private_token": str(config.get("private_token") or "").strip(),
             "clone_url_preference": str(config.get("clone_url_preference") or "http").strip().lower(),
             "verify_ssl": bool(config.get("verify_ssl", True)),
-            "timeout_seconds": float(config.get("timeout_seconds") or 20),
+            "timeout_seconds": max(int(float(config.get("timeout_seconds") or 20)), 1),
         }
         return metadata
 
     def _normalize_agent_settings_payload(self, payload: dict[str, object]) -> dict[str, object]:
         if not isinstance(payload, dict):
-            raise ValueError("request body must be an object")
+            raise ValueError("请求体必须是对象。")
 
         list_models_command = str(payload.get("list_models_command") or "").strip()
         if not list_models_command:
-            raise ValueError("list_models_command 不能为空")
+            raise ValueError("拉模型命令不能为空。")
 
         review_command = str(payload.get("review_command") or "").strip()
         if not review_command:
-            raise ValueError("review_command 不能为空")
+            raise ValueError("检视命令不能为空。")
 
         raw_models = payload.get("models") or []
         if not isinstance(raw_models, list):
-            raise ValueError("models must be a list")
+            raise ValueError("模型列表必须是数组。")
         models = self._normalize_model_ids(raw_models)
 
         default_model = str(payload.get("default_model_id") or payload.get("default_model") or "").strip()
         if default_model and default_model not in models:
-            raise ValueError("默认模型必须出现在 models 列表里")
+            raise ValueError("默认模型必须出现在模型列表中。")
 
         extra_env = payload.get("extra_env") or {}
         if not isinstance(extra_env, dict):
-            raise ValueError("extra_env must be a mapping")
+            raise ValueError("额外环境变量必须是对象。")
 
         return {
             "list_models_command": list_models_command,
@@ -401,12 +506,29 @@ class ReviewService:
             "models": models,
             "default_model": default_model,
             "extra_env": {str(key): str(value) for key, value in extra_env.items()},
-            "command_shell": self._normalize_command_shell_payload(payload.get("command_shell")),
+        }
+
+    def _normalize_agent_model_preview_payload(self, payload: dict[str, object]) -> dict[str, object]:
+        if not isinstance(payload, dict):
+            raise ValueError("请求体必须是对象。")
+
+        list_models_command = str(payload.get("list_models_command") or "").strip()
+        if not list_models_command:
+            raise ValueError("拉模型命令不能为空。")
+
+        extra_env = payload.get("extra_env") or {}
+        if not isinstance(extra_env, dict):
+            raise ValueError("额外环境变量必须是对象。")
+
+        return {
+            "list_models_command": list_models_command,
+            "review_command": str(payload.get("review_command") or "").strip(),
+            "extra_env": {str(key): str(value) for key, value in extra_env.items()},
         }
 
     def _normalize_hub_settings_payload(self, payload: dict[str, object]) -> dict[str, object]:
         if not isinstance(payload, dict):
-            raise ValueError("request body must be an object")
+            raise ValueError("请求体必须是对象。")
 
         hub_type = str(payload.get("type") or "").strip()
         if not hub_type:
@@ -416,12 +538,15 @@ class ReviewService:
 
         clone_url_preference = str(payload.get("clone_url_preference") or "http").strip().lower() or "http"
         if clone_url_preference not in {"http", "ssh"}:
-            raise ValueError("clone_url_preference must be http or ssh")
+            raise ValueError("克隆地址优先级只能是 http 或 ssh。")
 
         try:
-            timeout_seconds = max(float(payload.get("timeout_seconds") or 20), 1.0)
+            raw_timeout_seconds = float(payload.get("timeout_seconds") or 20)
         except (TypeError, ValueError) as exc:
-            raise ValueError("timeout_seconds must be a number") from exc
+            raise ValueError("超时时间必须是数字。") from exc
+        if not raw_timeout_seconds.is_integer():
+            raise ValueError("请求超时秒数必须是整数。")
+        timeout_seconds = max(int(raw_timeout_seconds), 1)
 
         api_base_url = str(payload.get("api_base_url") or "").strip()
         if hub_type == "gitlab" and not api_base_url:
@@ -437,34 +562,6 @@ class ReviewService:
             "timeout_seconds": timeout_seconds,
         }
 
-    def _normalize_command_shell_payload(self, raw_shell: object) -> str | dict[str, object] | None:
-        if raw_shell in (None, "", {}):
-            return None
-
-        if isinstance(raw_shell, str):
-            executable = raw_shell.strip()
-            return executable or None
-
-        if not isinstance(raw_shell, dict):
-            raise ValueError("command_shell must be a string or mapping")
-
-        executable = str(raw_shell.get("executable") or "").strip()
-        if not executable:
-            return None
-
-        raw_args = raw_shell.get("args")
-        if raw_args is None:
-            args: list[str] = []
-        elif not isinstance(raw_args, list):
-            raise ValueError("command_shell.args must be a list")
-        else:
-            args = [str(item).strip() for item in raw_args if str(item or "").strip()]
-
-        return {
-            "executable": executable,
-            "args": args,
-        }
-
     def _normalize_model_ids(self, models: list[object]) -> list[str]:
         seen: set[str] = set()
         normalized: list[str] = []
@@ -475,6 +572,40 @@ class ReviewService:
             seen.add(model_id)
             normalized.append(model_id)
         return normalized
+
+    def _normalize_settings_entity_id(self, raw_id: object, label: str) -> str:
+        normalized = str(raw_id or "").strip()
+        if not normalized:
+            raise ValueError(f"{label} ID 不能为空")
+        if normalized == "default":
+            raise ValueError(f"{label} ID 不能使用保留字 default")
+        return normalized
+
+    def _build_preview_agent(self, agent_id: str, settings: dict[str, object]) -> ConfigDrivenReviewAgent:
+        agent_config = self._config_manager.get_agent_config(agent_id)
+        preview_config = deepcopy(agent_config)
+        preview_config["list_models_command"] = str(settings.get("list_models_command") or "").strip()
+        preview_config["review_command"] = (
+            str(settings.get("review_command") or "").strip()
+            or str(preview_config.get("review_command") or "").strip()
+            or "echo"
+        )
+        preview_config["extra_env"] = {
+            str(key): str(value)
+            for key, value in (settings.get("extra_env") or {}).items()
+        }
+
+        preview_config_manager = _PreviewAgentConfigManager(
+            base_config_manager=self._config_manager,
+            agent_id=agent_id,
+            agent_config=preview_config,
+        )
+        preview_ctx = SimpleNamespace(
+            logger=self._logger,
+            config_manager=preview_config_manager,
+            root_path=self._ctx.root_path,
+        )
+        return ConfigDrivenReviewAgent(preview_ctx, agent_id)
 
     def _apply_config_change(self, mutator: Callable[[], object]) -> None:
         previous_config = self._config_manager.get_raw_config()
@@ -491,3 +622,46 @@ class ReviewService:
         self._agents.update(build_config_driven_agents(self._ctx))
         self._hubs.clear()
         self._hubs.update(build_configured_hubs(self._ctx))
+
+
+class _PreviewAgentConfigManager:
+    def __init__(self, *, base_config_manager, agent_id: str, agent_config: dict[str, object]):
+        self._base_config_manager = base_config_manager
+        self._agent_id = str(agent_id or "").strip()
+        self._agent_config = deepcopy(agent_config)
+
+    def get_agent_config(self, agent_id: str) -> dict[str, object]:
+        if str(agent_id or "").strip() != self._agent_id:
+            return {}
+        return deepcopy(self._agent_config)
+
+    def get_command_shell_config(self):
+        return self._base_config_manager.get_command_shell_config()
+
+    def get_agent_default_model_id(self, agent_id: str) -> str | None:
+        if str(agent_id or "").strip() != self._agent_id:
+            return None
+        value = str(self._agent_config.get("default_model") or "").strip()
+        return value or None
+
+    def update_agent_models(self, agent_id: str, models: list[str]) -> list[str]:
+        if str(agent_id or "").strip() != self._agent_id:
+            raise ValueError(f"未注册的 Agent：{agent_id}")
+
+        normalized = self._normalize_model_ids(models)
+        self._agent_config["models"] = normalized
+        current_default = str(self._agent_config.get("default_model") or "").strip()
+        if current_default and current_default not in normalized:
+            self._agent_config.pop("default_model", None)
+        return normalized
+
+    def _normalize_model_ids(self, models: list[object]) -> list[str]:
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for item in models:
+            model_id = str(item or "").strip()
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            normalized.append(model_id)
+        return normalized

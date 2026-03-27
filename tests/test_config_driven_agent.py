@@ -247,7 +247,7 @@ class ConfigDrivenAgentTestCase(unittest.TestCase):
             },
         )
 
-    def test_global_shell_takes_precedence_over_agent_level_shell(self):
+    def test_agent_level_shell_is_ignored(self):
         agent = ConfigDrivenReviewAgent(
             _FakeCtx(
                 agent_configs={
@@ -261,10 +261,6 @@ class ConfigDrivenAgentTestCase(unittest.TestCase):
                         },
                     }
                 },
-                command_shell_config={
-                    "executable": "C:/Program Files/Git/bin/bash.exe",
-                    "args": ["-lc"],
-                },
             ),
             "demo-agent",
         )
@@ -274,7 +270,13 @@ class ConfigDrivenAgentTestCase(unittest.TestCase):
             workspace_dir="/tmp/review-8/repo",
         )
 
-        self.assertEqual(command.argv[0], "C:/Program Files/Git/bin/bash.exe")
+        self.assertEqual(
+            command.argv,
+            [
+                "demo",
+                "review",
+            ],
+        )
 
     def test_command_env_keeps_process_environment_available(self):
         agent = ConfigDrivenReviewAgent(_FakeCtx(), "demo-agent")

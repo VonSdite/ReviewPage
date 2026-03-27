@@ -25,11 +25,14 @@ class WebController:
         self._app.route("/")(self.index)
         self._app.route("/api/meta", methods=["GET"])(self.get_meta)
         self._app.route("/api/settings", methods=["GET"])(self.get_settings)
+        self._app.route("/api/agents/<string:agent_id>/models/fetch", methods=["POST"])(self.fetch_agent_models_preview)
         self._app.route("/api/agents/<string:agent_id>/models/refresh", methods=["POST"])(self.refresh_agent_models)
         self._app.route("/api/agents/<string:agent_id>/default-model", methods=["POST"])(self.set_agent_default_model)
         self._app.route("/api/settings/agents/<string:agent_id>", methods=["POST"])(self.save_agent_settings)
+        self._app.route("/api/settings/agents/<string:agent_id>", methods=["DELETE"])(self.delete_agent_settings)
         self._app.route("/api/settings/agents/<string:agent_id>/default", methods=["POST"])(self.set_default_agent)
         self._app.route("/api/settings/hubs/<string:hub_id>", methods=["POST"])(self.save_hub_settings)
+        self._app.route("/api/settings/hubs/<string:hub_id>", methods=["DELETE"])(self.delete_hub_settings)
         self._app.route("/api/settings/hubs/<string:hub_id>/default", methods=["POST"])(self.set_default_hub)
         self._app.route("/api/reviews", methods=["GET"])(self.list_reviews)
         self._app.route("/api/reviews", methods=["POST"])(self.create_review)
@@ -52,6 +55,19 @@ class WebController:
             self._logger.exception("Failed to get settings metadata")
             return jsonify({"error": str(exc)}), 500
 
+    def fetch_agent_models_preview(self, agent_id: str) -> Response:
+        payload = request.get_json(silent=True)
+        if payload is not None and not isinstance(payload, dict):
+            return jsonify({"error": "请求体必须是对象。"}), 400
+
+        try:
+            return jsonify(self._review_service.fetch_agent_models_preview(agent_id, payload))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            self._logger.exception("Failed to fetch agent models preview")
+            return jsonify({"error": str(exc)}), 500
+
     def refresh_agent_models(self, agent_id: str) -> Response:
         try:
             return jsonify(self._review_service.refresh_agent_models(agent_id))
@@ -64,7 +80,7 @@ class WebController:
     def set_agent_default_model(self, agent_id: str) -> Response:
         payload = request.get_json(silent=True) or {}
         if not isinstance(payload, dict):
-            return jsonify({"error": "request body must be an object"}), 400
+            return jsonify({"error": "请求体必须是对象。"}), 400
 
         try:
             return jsonify(self._review_service.set_agent_default_model(agent_id, str(payload.get("model_id") or "")))
@@ -77,7 +93,7 @@ class WebController:
     def save_agent_settings(self, agent_id: str) -> Response:
         payload = request.get_json(silent=True) or {}
         if not isinstance(payload, dict):
-            return jsonify({"error": "request body must be an object"}), 400
+            return jsonify({"error": "请求体必须是对象。"}), 400
 
         try:
             return jsonify(self._review_service.save_agent_settings(agent_id, payload))
@@ -96,10 +112,19 @@ class WebController:
             self._logger.exception("Failed to set default agent")
             return jsonify({"error": str(exc)}), 500
 
+    def delete_agent_settings(self, agent_id: str) -> Response:
+        try:
+            return jsonify(self._review_service.delete_agent_settings(agent_id))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            self._logger.exception("Failed to delete agent settings")
+            return jsonify({"error": str(exc)}), 500
+
     def save_hub_settings(self, hub_id: str) -> Response:
         payload = request.get_json(silent=True) or {}
         if not isinstance(payload, dict):
-            return jsonify({"error": "request body must be an object"}), 400
+            return jsonify({"error": "请求体必须是对象。"}), 400
 
         try:
             return jsonify(self._review_service.save_hub_settings(hub_id, payload))
@@ -118,6 +143,15 @@ class WebController:
             self._logger.exception("Failed to set default hub")
             return jsonify({"error": str(exc)}), 500
 
+    def delete_hub_settings(self, hub_id: str) -> Response:
+        try:
+            return jsonify(self._review_service.delete_hub_settings(hub_id))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            self._logger.exception("Failed to delete hub settings")
+            return jsonify({"error": str(exc)}), 500
+
     def list_reviews(self) -> Response:
         try:
             page = max(int(request.args.get("page", 1)), 1)
@@ -132,7 +166,7 @@ class WebController:
     def create_review(self) -> Response:
         payload = request.get_json(silent=True) or {}
         if not isinstance(payload, dict):
-            return jsonify({"error": "request body must be an object"}), 400
+            return jsonify({"error": "请求体必须是对象。"}), 400
 
         try:
             review = self._review_service.create_review(payload)
