@@ -5,8 +5,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-import os
-import re
 import shutil
 import stat
 import tempfile
@@ -20,7 +18,7 @@ from ..application.app_context import AppContext
 from ..domain import ReviewAgent, ReviewHub, get_registered_hub_types
 from ..integrations import build_config_driven_agents, build_configured_hubs
 from ..integrations.agents import ConfigDrivenReviewAgent
-from ..utils import CommandCancelledError, format_command, resolve_command_argv, stream_command
+from ..utils import CommandCancelledError, format_command, stream_command
 
 
 class ReviewCancelledError(RuntimeError):
@@ -31,11 +29,6 @@ class ReviewCancelledError(RuntimeError):
 
 class ReviewService:
     """Encapsulate review execution and runtime settings workflows."""
-
-    _EXTERNAL_LOG_PATH_RE = re.compile(
-        r"check log file at\s+(?P<path>.+?)\s+for more details",
-        re.IGNORECASE,
-    )
 
     def __init__(
         self,
@@ -519,12 +512,6 @@ class ReviewService:
 
             self._raise_if_cancel_requested(cancel_event)
             append_log(f"[command] {format_command(command_spec.argv)}")
-            self._append_agent_command_diagnostics(
-                command_argv=command_spec.argv,
-                cwd=repo_dir,
-                extra_env=command_spec.env,
-                append_log=append_log,
-            )
             review_result = stream_command(
                 command_spec.argv,
                 cwd=repo_dir,
@@ -534,7 +521,6 @@ class ReviewService:
             )
             review_output = review_result.output.strip()
             if review_result.returncode != 0:
-                self._append_external_command_log_excerpt(review_output, append_log)
                 raise RuntimeError(f"Agent 命令执行失败，退出码 {review_result.returncode}")
 
             append_log("[system] 检视执行完成")
@@ -577,119 +563,6 @@ class ReviewService:
             return
 
         append_log(f"[system] 临时根目录已清理：{temp_root}")
-
-    def _append_agent_command_diagnostics(
-        self,
-        *,
-        command_argv: list[str],
-        cwd: Path,
-        extra_env: dict[str, str] | None,
-        append_log: Callable[[str], None],
-    ) -> None:
-        merged_env = os.environ.copy()
-        if extra_env:
-            merged_env.update(extra_env)
-
-        resolved_argv = resolve_command_argv(command_argv)
-        resolved_executable = str((resolved_argv or command_argv or [""])[0] or "").strip()
-        if resolved_executable:
-            append_log(f"[system] Agent 可执行文件：{resolved_executable}")
-
-        for key in (
-            "USERPROFILE",
-            "HOME",
-            "XDG_CONFIG_HOME",
-            "XDG_DATA_HOME",
-            "OPENCODE_CONFIG",
-            "OPENCODE_CONFIG_DIR",
-        ):
-            value = str(merged_env.get(key) or "").strip() or "(未设置)"
-            append_log(f"[system] Env {key}={value}")
-
-        self._append_opencode_workspace_diagnostics(cwd, append_log)
-
-    def _append_opencode_workspace_diagnostics(self, cwd: Path, append_log: Callable[[str], None]) -> None:
-        opencode_dir = cwd / ".opencode"
-        if not opencode_dir.exists():
-            append_log("[system] 工作目录 .opencode：不存在")
-            return
-
-        if not opencode_dir.is_dir():
-            append_log(f"[system] 工作目录 .opencode：存在但不是目录 -> {opencode_dir}")
-            return
-
-        append_log(
-            f"[system] 工作目录 .opencode 条目：{self._format_directory_entries(opencode_dir)}"
-        )
-
-        commands_dir = opencode_dir / "commands"
-        if not commands_dir.exists():
-            return
-
-        if not commands_dir.is_dir():
-            append_log(f"[system] 工作目录 .opencode/commands：存在但不是目录 -> {commands_dir}")
-            return
-
-        append_log(
-            f"[system] 工作目录 .opencode/commands 条目：{self._format_directory_entries(commands_dir)}"
-        )
-
-    def _append_external_command_log_excerpt(self, command_output: str, append_log: Callable[[str], None]) -> None:
-        log_path = self._extract_external_log_path(command_output)
-        if log_path is None:
-            return
-
-        append_log(f"[system] 检测到外部日志文件：{log_path}")
-        if not log_path.exists():
-            append_log(f"[system] 外部日志文件不存在：{log_path}")
-            return
-
-        if log_path.is_dir():
-            append_log(f"[system] 外部日志路径是目录而不是文件：{log_path}")
-            return
-
-        try:
-            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError as exc:
-            append_log(f"[system] 读取外部日志失败：{exc}")
-            return
-
-        if not lines:
-            append_log("[system] 外部日志文件为空")
-            return
-
-        append_log("[system] 外部日志摘录（末尾 120 行）：")
-        for line in lines[-120:]:
-            append_log(f"[external-log] {line.rstrip()}")
-
-    def _extract_external_log_path(self, command_output: str) -> Path | None:
-        for line in str(command_output or "").splitlines():
-            matched = self._EXTERNAL_LOG_PATH_RE.search(line)
-            if not matched:
-                continue
-            raw_path = matched.group("path").strip().strip('"')
-            if raw_path:
-                return Path(raw_path)
-        return None
-
-    @staticmethod
-    def _format_directory_entries(path: Path, *, limit: int = 12) -> str:
-        try:
-            entries = sorted(path.iterdir(), key=lambda item: item.name.lower())
-        except OSError as exc:
-            return f"(读取失败：{exc})"
-
-        if not entries:
-            return "(空目录)"
-
-        labels: list[str] = []
-        for item in entries[:limit]:
-            suffix = "/" if item.is_dir() else ""
-            labels.append(f"{item.name}{suffix}")
-
-        if len(entries) > limit:
-            labels.append(f"... (+{len(entries) - limit})")
-        return ", ".join(labels)
 
     def _remove_directory_tree(
         self,

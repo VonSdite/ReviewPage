@@ -172,6 +172,7 @@
         elements.detailCancelButton = document.getElementById('detailCancelButton');
         elements.detailDeleteButton = document.getElementById('detailDeleteButton');
         elements.detailPrefillButton = document.getElementById('detailPrefillButton');
+        elements.detailRefreshButton = document.getElementById('detailRefreshButton');
         elements.detailStatusPill = document.getElementById('detailStatusPill');
         elements.detailContent = document.getElementById('detailContent');
         elements.detailMrUrl = document.getElementById('detailMrUrl');
@@ -425,13 +426,21 @@
             return null;
         }
 
+        const listRecord = state.records.find(function(record) {
+            return String(record.id) === normalizedId;
+        }) || null;
+        if (listRecord) {
+            if (state.openDetailRecord && String(state.openDetailRecord.id) === normalizedId) {
+                return Object.assign({}, state.openDetailRecord, listRecord);
+            }
+            return listRecord;
+        }
+
         if (state.openDetailRecord && String(state.openDetailRecord.id) === normalizedId) {
             return state.openDetailRecord;
         }
 
-        return state.records.find(function(record) {
-            return String(record.id) === normalizedId;
-        }) || null;
+        return null;
     }
 
     function getReviewCancelTrigger(reviewId, source) {
@@ -2464,61 +2473,124 @@
         elements.tableFooter.style.display = 'flex';
     }
 
-    function renderRecords(records) {
-        state.records = records;
+    function getRecordRowRenderKey(record) {
+        return JSON.stringify([
+            String(record.id || ''),
+            String(record.mr_url || ''),
+            String(record.title || ''),
+            String(record.hub_id || ''),
+            String(record.agent_id || ''),
+            String(record.model_id || ''),
+            String(record.status || ''),
+            String(record.status_label || ''),
+            String(record.runtime_state || ''),
+            String(record.created_at || ''),
+            String(record.finished_at || ''),
+            String(state.deletingReviewDeleteId || '') === String(record.id || '')
+        ]);
+    }
 
-        if (!records.length) {
+    function buildRecordRowMarkup(record) {
+        const mrUrl = String(record.mr_url || '').trim();
+        const mrTitle = record.title || mrUrl || '-';
+        const escapedMrUrl = escapeHtml(mrUrl);
+        const mrLinkMarkup = mrUrl
+            ? `
+                        <div class="record-link-row">
+                            <a class="record-link" href="${escapedMrUrl}" target="_blank" rel="noreferrer">${escapedMrUrl}</a>
+                            <button
+                                type="button"
+                                class="copy-link-button"
+                                data-copy-text="${escapedMrUrl}"
+                                data-copy-label="MR 地址"
+                                title="复制 MR 地址"
+                                aria-label="复制 MR 地址"
+                            >
+                                ${COPY_LINK_ICON_MARKUP}
+                            </button>
+                        </div>
+                    `
+            : '<div class="record-subtitle">-</div>';
+
+        return `
+            <td class="col-mr">
+                <div class="record-meta">
+                    <div class="record-title">${escapeHtml(mrTitle)}</div>
+                    ${mrLinkMarkup}
+                </div>
+            </td>
+            <td class="col-hub">${escapeHtml(record.hub_id)}</td>
+            <td class="col-agent">${escapeHtml(record.agent_id)}</td>
+            <td class="col-model">${escapeHtml(record.model_id)}</td>
+            <td class="col-status">${renderStatusPill(record)}</td>
+            <td class="col-time">
+                <div class="record-time">创建: ${escapeHtml(formatDate(record.created_at))}</div>
+                <div class="record-time">结束: ${record.finished_at ? escapeHtml(formatDate(record.finished_at)) : ''}</div>
+            </td>
+            <td class="col-actions">
+                <div class="record-actions">
+                    ${renderReviewActionButtons(record)}
+                </div>
+            </td>
+        `;
+    }
+
+    function syncRecordRow(row, record) {
+        const renderKey = getRecordRowRenderKey(record);
+        row.dataset.reviewId = String(record.id);
+        if (row.dataset.renderKey !== renderKey) {
+            row.innerHTML = buildRecordRowMarkup(record);
+            row.dataset.renderKey = renderKey;
+        }
+        return row;
+    }
+
+    function createRecordRow(record) {
+        return syncRecordRow(document.createElement('tr'), record);
+    }
+
+    function renderRecords(records) {
+        const nextRecords = Array.isArray(records) ? records : [];
+        state.records = nextRecords;
+
+        if (!nextRecords.length) {
             elements.recordsTableBody.innerHTML = '<tr><td colspan="7" class="empty-row">暂无检视记录。</td></tr>';
             syncReviewCancelPopover();
             syncReviewDeletePopover();
             return;
         }
 
-        elements.recordsTableBody.innerHTML = records.map(function(record) {
-            const mrUrl = String(record.mr_url || '').trim();
-            const mrTitle = record.title || mrUrl || '-';
-            const escapedMrUrl = escapeHtml(mrUrl);
-            const mrLinkMarkup = mrUrl
-                ? `
-                            <div class="record-link-row">
-                                <a class="record-link" href="${escapedMrUrl}" target="_blank" rel="noreferrer">${escapedMrUrl}</a>
-                                <button
-                                    type="button"
-                                    class="copy-link-button"
-                                    data-copy-text="${escapedMrUrl}"
-                                    data-copy-label="MR 地址"
-                                    title="复制 MR 地址"
-                                    aria-label="复制 MR 地址"
-                                >
-                                    ${COPY_LINK_ICON_MARKUP}
-                                </button>
-                            </div>
-                        `
-                : '<div class="record-subtitle">-</div>';
-            return `
-                <tr>
-                    <td class="col-mr">
-                        <div class="record-meta">
-                            <div class="record-title">${escapeHtml(mrTitle)}</div>
-                            ${mrLinkMarkup}
-                        </div>
-                    </td>
-                    <td class="col-hub">${escapeHtml(record.hub_id)}</td>
-                    <td class="col-agent">${escapeHtml(record.agent_id)}</td>
-                    <td class="col-model">${escapeHtml(record.model_id)}</td>
-                    <td class="col-status">${renderStatusPill(record)}</td>
-                    <td class="col-time">
-                        <div class="record-time">创建: ${escapeHtml(formatDate(record.created_at))}</div>
-                        <div class="record-time">结束: ${record.finished_at ? escapeHtml(formatDate(record.finished_at)) : ''}</div>
-                    </td>
-                    <td class="col-actions">
-                        <div class="record-actions">
-                            ${renderReviewActionButtons(record)}
-                        </div>
-                    </td>
-                </tr>
-            `;
-        }).join('');
+        Array.from(elements.recordsTableBody.querySelectorAll('tr')).forEach(function(row) {
+            if (!row.dataset.reviewId) {
+                row.remove();
+            }
+        });
+
+        const existingRows = new Map();
+        Array.from(elements.recordsTableBody.querySelectorAll('tr[data-review-id]')).forEach(function(row) {
+            existingRows.set(String(row.dataset.reviewId || '').trim(), row);
+        });
+
+        let currentRow = elements.recordsTableBody.firstElementChild;
+        nextRecords.forEach(function(record) {
+            const reviewId = String(record.id);
+            const row = existingRows.has(reviewId)
+                ? syncRecordRow(existingRows.get(reviewId), record)
+                : createRecordRow(record);
+
+            existingRows.delete(reviewId);
+
+            if (currentRow !== row) {
+                elements.recordsTableBody.insertBefore(row, currentRow);
+            } else {
+                currentRow = currentRow.nextElementSibling;
+            }
+        });
+
+        existingRows.forEach(function(row) {
+            row.remove();
+        });
+
         syncReviewCancelPopover();
         syncReviewDeletePopover();
     }
@@ -2535,7 +2607,10 @@
         syncReviewDeletePopover();
 
         if (state.openDetailId != null && !elements.detailModal.hidden) {
-            await loadDetail(state.openDetailId, true);
+            const listRecord = state.records.find(function(record) {
+                return String(record.id) === String(state.openDetailId);
+            }) || null;
+            syncOpenDetailSummary(listRecord);
             syncReviewCancelPopover();
             syncReviewDeletePopover();
         }
@@ -2640,25 +2715,64 @@
         renderHubSettingsList();
     }
 
-    function renderDetail(detail) {
-        const mrUrl = String(detail.mr_url || '').trim();
+    function syncDetailActionButtons(detail) {
         const canCancel = isReviewCancelable(detail);
         const isDeleting = String(state.deletingReviewDeleteId || '') === String(detail.id);
+
+        if (elements.detailCancelButton) {
+            const nextCancelLabel = getCancelActionLabel(detail);
+            if (elements.detailCancelButton.hidden !== !canCancel) {
+                elements.detailCancelButton.hidden = !canCancel;
+            }
+            if (elements.detailCancelButton.disabled !== (detail.runtime_state === 'canceling')) {
+                elements.detailCancelButton.disabled = detail.runtime_state === 'canceling';
+            }
+            if (elements.detailCancelButton.textContent !== nextCancelLabel) {
+                elements.detailCancelButton.textContent = nextCancelLabel;
+            }
+        }
+        if (elements.detailDeleteButton) {
+            if (elements.detailDeleteButton.hidden) {
+                elements.detailDeleteButton.hidden = false;
+            }
+            if (elements.detailDeleteButton.disabled !== isDeleting) {
+                elements.detailDeleteButton.disabled = isDeleting;
+            }
+            if (elements.detailDeleteButton.textContent !== '删除任务') {
+                elements.detailDeleteButton.textContent = '删除任务';
+            }
+        }
+    }
+
+    function syncOpenDetailSummary(record) {
+        if (!record || !state.openDetailRecord || String(state.openDetailRecord.id) !== String(record.id)) {
+            return;
+        }
+
+        state.openDetailRecord = Object.assign({}, state.openDetailRecord, record);
+        const nextStatusClass = `status-pill ${getStatusClass(state.openDetailRecord)}`;
+        const nextStatusLabel = state.openDetailRecord.status_label;
+        const nextFinishedAt = formatDate(state.openDetailRecord.finished_at);
+        if (elements.detailStatusPill.className !== nextStatusClass) {
+            elements.detailStatusPill.className = nextStatusClass;
+        }
+        if (elements.detailStatusPill.textContent !== nextStatusLabel) {
+            elements.detailStatusPill.textContent = nextStatusLabel;
+        }
+        if (elements.detailFinishedAt.textContent !== nextFinishedAt) {
+            elements.detailFinishedAt.textContent = nextFinishedAt;
+        }
+        syncDetailActionButtons(state.openDetailRecord);
+    }
+
+    function renderDetail(detail) {
+        const mrUrl = String(detail.mr_url || '').trim();
         state.openDetailId = detail.id;
         state.openDetailRecord = detail;
         elements.detailStatusPill.className = `status-pill ${getStatusClass(detail)}`;
         elements.detailStatusPill.textContent = detail.status_label;
         elements.detailContent.hidden = false;
-        if (elements.detailCancelButton) {
-            elements.detailCancelButton.hidden = !canCancel;
-            elements.detailCancelButton.disabled = detail.runtime_state === 'canceling';
-            elements.detailCancelButton.textContent = getCancelActionLabel(detail);
-        }
-        if (elements.detailDeleteButton) {
-            elements.detailDeleteButton.hidden = false;
-            elements.detailDeleteButton.disabled = isDeleting;
-            elements.detailDeleteButton.textContent = '删除任务';
-        }
+        syncDetailActionButtons(detail);
 
         elements.detailMrUrl.textContent = mrUrl || '-';
         if (mrUrl) {
@@ -3687,6 +3801,20 @@
             }
             prefillReviewForm(state.openDetailRecord);
         });
+
+        if (elements.detailRefreshButton) {
+            elements.detailRefreshButton.addEventListener('click', function() {
+                if (!state.openDetailId) {
+                    return;
+                }
+
+                runWithBusyButton(elements.detailRefreshButton, '刷新中...', function() {
+                    return loadDetail(state.openDetailId);
+                }).catch(function(error) {
+                    showToast(error.message || String(error), 'error');
+                });
+            });
+        }
 
         if (elements.detailCancelButton) {
             elements.detailCancelButton.addEventListener('click', function() {

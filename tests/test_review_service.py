@@ -636,46 +636,6 @@ class ReviewServiceTestCase(unittest.TestCase):
         self.assertTrue(handled)
         self.assertFalse(temp_root.exists())
 
-    def test_execute_review_appends_external_log_excerpt_on_agent_failure(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            temp_root = Path(tmpdir) / "workspaces"
-            service, _ctx = self.create_service(str(temp_root))
-            created = service.create_review(
-                {
-                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/14",
-                    "hub_id": "gitlab",
-                    "agent_id": "opencode",
-                    "model_id": "provider/model-a",
-                }
-            )
-
-            external_log = Path(tmpdir) / "opencode.log"
-            external_log.write_text("line one\nline two\n", encoding="utf-8")
-
-            class _FakeResult:
-                def __init__(self, returncode, output):
-                    self.returncode = returncode
-                    self.output = output
-
-            with patch("src.services.review_service.stream_command") as mocked_stream_command:
-                mocked_stream_command.side_effect = [
-                    _FakeResult(0, "clone ok"),
-                    _FakeResult(
-                        1,
-                        f"Error: Unexpected error, check log file at {external_log} for more details",
-                    ),
-                ]
-                handled = service.execute_next_review()
-
-            detail = service.get_review_detail(int(created["id"]))
-
-        self.assertTrue(handled)
-        self.assertIsNotNone(detail)
-        joined_logs = "\n".join(item["line"] for item in detail["logs"])
-        self.assertIn("检测到外部日志文件", joined_logs)
-        self.assertIn("[external-log] line one", joined_logs)
-        self.assertIn("[external-log] line two", joined_logs)
-
     def test_refresh_agent_models_returns_latest_settings_payload(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             service, _ctx = self.create_service(tmpdir)
