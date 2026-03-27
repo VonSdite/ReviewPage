@@ -6,10 +6,13 @@ from __future__ import annotations
 
 import locale
 import os
+import queue
 import re
 import shlex
 import shutil
+import signal
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -19,6 +22,12 @@ from typing import Callable
 class CommandRunResult:
     returncode: int
     output: str
+
+
+class CommandCancelledError(RuntimeError):
+    def __init__(self, output: str = "", message: str = "命令执行已取消"):
+        super().__init__(message)
+        self.output = output
 
 
 def format_command(argv: list[str]) -> str:
@@ -87,12 +96,134 @@ def resolve_command_argv(argv: list[str]) -> list[str]:
     return [resolved, *argv[1:]]
 
 
+def build_hidden_subprocess_kwargs(*, new_process_group: bool = False) -> dict[str, object]:
+    if os.name != "nt":
+        if new_process_group:
+            return {"start_new_session": True}
+        return {}
+
+    kwargs: dict[str, object] = {}
+    startupinfo_factory = getattr(subprocess, "STARTUPINFO", None)
+    if startupinfo_factory is not None:
+        startupinfo = startupinfo_factory()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        kwargs["startupinfo"] = startupinfo
+
+    creationflags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0) or 0)
+    if new_process_group:
+        creationflags |= int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) or 0)
+    if creationflags:
+        kwargs["creationflags"] = creationflags
+
+    return kwargs
+
+
+def kill_subprocess_tree(process: subprocess.Popen[bytes], *, grace_period_seconds: float = 1.5) -> None:
+    if process.poll() is not None:
+        return
+
+    if os.name == "nt":
+        _kill_windows_process_tree(process, grace_period_seconds=grace_period_seconds)
+        return
+
+    _kill_posix_process_tree(process, grace_period_seconds=grace_period_seconds)
+
+
+def _kill_windows_process_tree(process: subprocess.Popen[bytes], *, grace_period_seconds: float) -> None:
+    try:
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            **build_hidden_subprocess_kwargs(),
+        )
+    except Exception:
+        try:
+            process.terminate()
+        except OSError:
+            return
+
+    try:
+        process.wait(timeout=grace_period_seconds)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    except OSError:
+        return
+
+    try:
+        process.kill()
+    except OSError:
+        return
+
+    try:
+        process.wait(timeout=grace_period_seconds)
+    except (subprocess.TimeoutExpired, OSError):
+        return
+
+
+def _kill_posix_process_tree(process: subprocess.Popen[bytes], *, grace_period_seconds: float) -> None:
+    process_group_id: int | None = None
+    try:
+        process_group_id = os.getpgid(process.pid)
+    except OSError:
+        process_group_id = None
+
+    if process_group_id is not None:
+        try:
+            os.killpg(process_group_id, signal.SIGTERM)
+        except OSError:
+            process_group_id = None
+
+    if process_group_id is None:
+        try:
+            process.terminate()
+        except OSError:
+            return
+
+    try:
+        process.wait(timeout=grace_period_seconds)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    except OSError:
+        return
+
+    if process_group_id is not None:
+        try:
+            os.killpg(process_group_id, signal.SIGKILL)
+        except OSError:
+            process_group_id = None
+
+    if process_group_id is None:
+        try:
+            process.kill()
+        except OSError:
+            return
+
+    try:
+        process.wait(timeout=grace_period_seconds)
+    except (subprocess.TimeoutExpired, OSError):
+        return
+
+
+def _read_process_output(stdout, output_queue: "queue.Queue[bytes | None]") -> None:
+    try:
+        for raw_line in stdout:
+            output_queue.put(raw_line)
+    finally:
+        output_queue.put(None)
+
+
 def stream_command(
     argv: list[str],
     *,
     cwd: Path,
     env: dict[str, str] | None = None,
     on_output: Callable[[str], None] | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> CommandRunResult:
     merged_env = os.environ.copy()
     if env:
@@ -109,6 +240,7 @@ def stream_command(
             text=False,
             bufsize=-1,
             env=merged_env,
+            **build_hidden_subprocess_kwargs(new_process_group=True),
         )
     except FileNotFoundError as exc:
         message = f"命令不存在：{exc}"
@@ -123,13 +255,46 @@ def stream_command(
 
     lines: list[str] = []
     assert process.stdout is not None
-    for raw_line in process.stdout:
-        line = strip_terminal_control_sequences(decode_command_output(raw_line)).rstrip("\r\n")
-        if not line and raw_line.rstrip(b"\r\n"):
-            continue
-        lines.append(line)
-        if on_output:
-            on_output(line)
+
+    output_queue: queue.Queue[bytes | None] = queue.Queue()
+    reader_thread = threading.Thread(
+        target=_read_process_output,
+        args=(process.stdout, output_queue),
+        name="command-output-reader",
+        daemon=True,
+    )
+    reader_thread.start()
+
+    try:
+        while True:
+            if cancel_requested and cancel_requested():
+                kill_subprocess_tree(process)
+                raise CommandCancelledError(output="\n".join(lines))
+
+            try:
+                raw_line = output_queue.get(timeout=0.1)
+            except queue.Empty:
+                if process.poll() is not None and not reader_thread.is_alive():
+                    break
+                continue
+
+            if raw_line is None:
+                if process.poll() is not None:
+                    break
+                continue
+
+            line = strip_terminal_control_sequences(decode_command_output(raw_line)).rstrip("\r\n")
+            if not line and raw_line.rstrip(b"\r\n"):
+                continue
+            lines.append(line)
+            if on_output:
+                on_output(line)
+    finally:
+        try:
+            process.stdout.close()
+        except (AttributeError, OSError):
+            pass
+        reader_thread.join(timeout=0.5)
 
     returncode = process.wait()
     return CommandRunResult(returncode=returncode, output="\n".join(lines))

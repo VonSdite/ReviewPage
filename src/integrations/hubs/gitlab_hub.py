@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""GitLab Merge Request Hub 实现。"""
+"""Merge Request Hub 实现。"""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ class GitLabReviewHub(ReviewHub):
 
     def resolve_review_target(self, review_url: str) -> MergeRequestTarget:
         if self._web_base_url and not self.supports_url(review_url):
-            raise ValueError(f"GitLab Hub 不支持该地址：{review_url}")
+            raise ValueError(f"Hub API基地址与MR地址不同， 不支持该MR：{review_url}")
 
         project_path, merge_request_iid = self._parse_merge_request_url(review_url)
         merge_request = self._get_json(
@@ -53,7 +53,7 @@ class GitLabReviewHub(ReviewHub):
 
         source_project_id = merge_request.get("source_project_id") or merge_request.get("project_id")
         if not source_project_id:
-            raise RuntimeError("GitLab API 未返回 source_project_id")
+            raise RuntimeError("API 未返回 source_project_id")
 
         project = self._get_json(f"/projects/{source_project_id}")
         repo_url = self._pick_repo_url(project)
@@ -61,7 +61,7 @@ class GitLabReviewHub(ReviewHub):
         target_branch = str(merge_request.get("target_branch") or "").strip()
 
         if not repo_url or not source_branch:
-            raise RuntimeError("GitLab MR 信息不完整，缺少仓库地址或 source branch")
+            raise RuntimeError("MR 信息不完整，缺少仓库地址或 source branch")
 
         author = merge_request.get("author") or {}
         author_name = author.get("name") or author.get("username")
@@ -83,7 +83,7 @@ class GitLabReviewHub(ReviewHub):
         path = parsed.path.lstrip("/")
         matched = GITLAB_MR_PATTERN.match(path)
         if not matched:
-            raise ValueError(f"无法解析 GitLab Merge Request 地址：{review_url}")
+            raise ValueError(f"无法解析 Merge Request 地址：{review_url}")
         project_path = matched.group("project").strip("/")
         iid = matched.group("iid")
         return project_path, iid
@@ -97,7 +97,7 @@ class GitLabReviewHub(ReviewHub):
 
     def _get_json(self, api_path: str) -> dict[str, object]:
         if not self._api_base_url:
-            raise ValueError("GitLab Hub 缺少 api_base_url 配置")
+            raise ValueError("Hub 缺少 api_base_url 配置")
 
         headers = {}
         if self._private_token:
@@ -111,11 +111,11 @@ class GitLabReviewHub(ReviewHub):
             verify=self._verify_ssl,
         )
         if response.status_code >= 400:
-            raise RuntimeError(f"GitLab API 请求失败：{response.status_code} {response.text.strip()}")
+            raise RuntimeError(f"API 请求失败：{response.status_code} {response.text.strip()}")
 
         payload = response.json()
         if not isinstance(payload, dict):
-            raise RuntimeError("GitLab API 返回了非对象结构")
+            raise RuntimeError("API 返回了非对象结构")
         return payload
 
 

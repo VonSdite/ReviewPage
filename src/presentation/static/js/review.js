@@ -50,6 +50,12 @@
     };
 
     const elements = {};
+    const COPY_LINK_ICON_MARKUP = `
+        <svg class="copy-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <rect x="9" y="9" width="11" height="11" rx="2.25"></rect>
+            <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
+        </svg>
+    `.trim();
 
     function cacheElements() {
         elements.pageTopbarTitle = document.getElementById('pageTopbarTitle');
@@ -147,10 +153,12 @@
         elements.toastStack = document.getElementById('toastStack');
 
         elements.detailModal = document.getElementById('detailModal');
+        elements.detailCancelButton = document.getElementById('detailCancelButton');
         elements.detailPrefillButton = document.getElementById('detailPrefillButton');
         elements.detailStatusPill = document.getElementById('detailStatusPill');
         elements.detailContent = document.getElementById('detailContent');
         elements.detailMrUrl = document.getElementById('detailMrUrl');
+        elements.detailMrUrlCopyButton = document.getElementById('detailMrUrlCopyButton');
         elements.detailHub = document.getElementById('detailHub');
         elements.detailAgent = document.getElementById('detailAgent');
         elements.detailModel = document.getElementById('detailModel');
@@ -205,6 +213,98 @@
         window.setTimeout(function() {
             item.remove();
         }, 3600);
+    }
+
+    function updateCopyButtonAccessibility(button, prefix) {
+        if (!button) {
+            return;
+        }
+
+        const label = button.getAttribute('data-copy-label') || '内容';
+        const actionLabel = `${prefix}${label}`;
+        button.setAttribute('title', actionLabel);
+        button.setAttribute('aria-label', actionLabel);
+    }
+
+    function resetCopyButtonState(button) {
+        if (!button) {
+            return;
+        }
+
+        if (button._copyFeedbackTimer) {
+            window.clearTimeout(button._copyFeedbackTimer);
+            button._copyFeedbackTimer = null;
+        }
+
+        button.classList.remove('is-copied');
+        updateCopyButtonAccessibility(button, '复制 ');
+    }
+
+    function showCopyButtonSuccess(button) {
+        if (!button) {
+            return;
+        }
+
+        resetCopyButtonState(button);
+        button.classList.add('is-copied');
+        updateCopyButtonAccessibility(button, '已复制 ');
+        button._copyFeedbackTimer = window.setTimeout(function() {
+            resetCopyButtonState(button);
+        }, 1400);
+    }
+
+    async function copyTextToClipboard(value) {
+        const text = String(value || '').trim();
+        if (!text) {
+            throw new Error('没有可复制的 MR 地址。');
+        }
+
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            try {
+                await navigator.clipboard.writeText(text);
+                return;
+            } catch (error) {
+                // Fall back to execCommand for environments without Clipboard API permissions.
+            }
+        }
+
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', 'readonly');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-9999px';
+        textarea.style.left = '-9999px';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+
+        let copied = false;
+        try {
+            copied = Boolean(document.execCommand && document.execCommand('copy'));
+        } finally {
+            textarea.remove();
+        }
+
+        if (!copied) {
+            throw new Error('复制失败，请手动复制 MR 地址。');
+        }
+    }
+
+    async function copyFromButton(button) {
+        if (!button) {
+            return;
+        }
+
+        try {
+            await copyTextToClipboard(button.getAttribute('data-copy-text') || '');
+            showCopyButtonSuccess(button);
+            showToast(`${button.getAttribute('data-copy-label') || '内容'}已复制。`, 'success');
+        } catch (error) {
+            resetCopyButtonState(button);
+            showToast(error.message || String(error), 'error');
+        }
     }
 
     async function requestJson(url, options) {
@@ -1160,7 +1260,7 @@
             appendOption(
                 elements.agentDefaultModelSelect,
                 normalizedSelectedId,
-                `[缺失] ${normalizedSelectedId}`,
+                `[已删除] ${normalizedSelectedId}`,
                 {
                     selected: true
                 }
@@ -1727,8 +1827,14 @@
         if (record.status === 'completed') {
             return 'status-completed';
         }
+        if (record.status === 'cancelled') {
+            return 'status-cancelled';
+        }
         if (record.status === 'failed') {
             return 'status-failed';
+        }
+        if (record.runtime_state === 'canceling') {
+            return 'status-canceling';
         }
         if (record.runtime_state === 'running') {
             return 'status-running';
@@ -1738,6 +1844,40 @@
 
     function renderStatusPill(record) {
         return `<span class="status-pill ${getStatusClass(record)}">${escapeHtml(record.status_label)}</span>`;
+    }
+
+    function isPendingReview(record) {
+        return Boolean(record) && record.status === 'pending';
+    }
+
+    function isReviewCancelable(record) {
+        return isPendingReview(record) && ['queued', 'running', 'canceling'].includes(String(record.runtime_state || ''));
+    }
+
+    function getCancelActionLabel(record) {
+        if (!record) {
+            return '取消';
+        }
+        if (record.runtime_state === 'running') {
+            return '停止';
+        }
+        if (record.runtime_state === 'canceling') {
+            return '停止中';
+        }
+        return '取消';
+    }
+
+    function renderReviewActionButtons(record) {
+        const canCancel = isReviewCancelable(record);
+        const cancelLabel = getCancelActionLabel(record);
+        const cancelDisabled = record && record.runtime_state === 'canceling';
+
+        return `
+            <button type="button" class="table-action-button table-action-button-edit" data-view-review-id="${record.id}">详情</button>
+            ${canCancel
+                ? `<button type="button" class="table-action-button table-action-button-danger" data-cancel-review-id="${record.id}"${cancelDisabled ? ' disabled' : ''}>${escapeHtml(cancelLabel)}</button>`
+                : `<button type="button" class="table-action-button table-action-button-danger" data-prefill-review-id="${record.id}">重试</button>`}
+        `;
     }
 
     function getSettingsTableState(tableKey) {
@@ -1876,13 +2016,32 @@
         }
 
         elements.recordsTableBody.innerHTML = records.map(function(record) {
-            const mrTitle = record.title || record.mr_url;
+            const mrUrl = String(record.mr_url || '').trim();
+            const mrTitle = record.title || mrUrl || '-';
+            const escapedMrUrl = escapeHtml(mrUrl);
+            const mrLinkMarkup = mrUrl
+                ? `
+                            <div class="record-link-row">
+                                <a class="record-link" href="${escapedMrUrl}" target="_blank" rel="noreferrer">${escapedMrUrl}</a>
+                                <button
+                                    type="button"
+                                    class="copy-link-button"
+                                    data-copy-text="${escapedMrUrl}"
+                                    data-copy-label="MR 地址"
+                                    title="复制 MR 地址"
+                                    aria-label="复制 MR 地址"
+                                >
+                                    ${COPY_LINK_ICON_MARKUP}
+                                </button>
+                            </div>
+                        `
+                : '<div class="record-subtitle">-</div>';
             return `
                 <tr>
                     <td class="col-mr">
                         <div class="record-meta">
                             <div class="record-title">${escapeHtml(mrTitle)}</div>
-                            <a class="record-link" href="${escapeHtml(record.mr_url)}" target="_blank" rel="noreferrer">${escapeHtml(record.mr_url)}</a>
+                            ${mrLinkMarkup}
                         </div>
                     </td>
                     <td class="col-hub">${escapeHtml(record.hub_id)}</td>
@@ -1895,8 +2054,7 @@
                     </td>
                     <td class="col-actions">
                         <div class="record-actions">
-                            <button type="button" class="table-action-button table-action-button-edit" data-view-review-id="${record.id}">详情</button>
-                            <button type="button" class="table-action-button table-action-button-danger" data-prefill-review-id="${record.id}">重试</button>
+                            ${renderReviewActionButtons(record)}
                         </div>
                     </td>
                 </tr>
@@ -1955,6 +2113,11 @@
         state.openDetailId = null;
         state.openDetailRecord = null;
         elements.detailContent.hidden = true;
+        if (elements.detailCancelButton) {
+            elements.detailCancelButton.hidden = true;
+            elements.detailCancelButton.disabled = false;
+            elements.detailCancelButton.textContent = '取消任务';
+        }
         closeModal(elements.detailModal);
     }
 
@@ -2002,14 +2165,32 @@
     }
 
     function renderDetail(detail) {
+        const mrUrl = String(detail.mr_url || '').trim();
+        const canCancel = isReviewCancelable(detail);
         state.openDetailId = detail.id;
         state.openDetailRecord = detail;
         elements.detailStatusPill.className = `status-pill ${getStatusClass(detail)}`;
         elements.detailStatusPill.textContent = detail.status_label;
         elements.detailContent.hidden = false;
+        if (elements.detailCancelButton) {
+            elements.detailCancelButton.hidden = !canCancel;
+            elements.detailCancelButton.disabled = detail.runtime_state === 'canceling';
+            elements.detailCancelButton.textContent = getCancelActionLabel(detail);
+        }
 
-        elements.detailMrUrl.textContent = detail.mr_url || '-';
-        elements.detailMrUrl.href = detail.mr_url || '#';
+        elements.detailMrUrl.textContent = mrUrl || '-';
+        if (mrUrl) {
+            elements.detailMrUrl.href = mrUrl;
+        } else {
+            elements.detailMrUrl.removeAttribute('href');
+        }
+        resetCopyButtonState(elements.detailMrUrlCopyButton);
+        if (elements.detailMrUrlCopyButton) {
+            elements.detailMrUrlCopyButton.hidden = !mrUrl;
+            elements.detailMrUrlCopyButton.disabled = !mrUrl;
+            elements.detailMrUrlCopyButton.setAttribute('data-copy-text', mrUrl);
+            resetCopyButtonState(elements.detailMrUrlCopyButton);
+        }
         elements.detailHub.textContent = detail.hub_id || '-';
         elements.detailAgent.textContent = detail.agent_id || '-';
         elements.detailModel.textContent = detail.model_id || '-';
@@ -2035,6 +2216,21 @@
                 throw error;
             }
         }
+    }
+
+    async function cancelReview(reviewId) {
+        const payload = await requestJson(`/api/reviews/${reviewId}/cancel`, {
+            method: 'POST'
+        });
+
+        if (payload.status === 'cancelled') {
+            showToast('任务已取消。', 'success');
+        } else {
+            showToast('已发送停止请求，正在停止任务。', 'success');
+        }
+
+        await refreshReviews();
+        return payload;
     }
 
     function prefillReviewForm(record) {
@@ -2142,7 +2338,9 @@
             list_models_command: String(elements.agentListModelsCommandInput.value || '').trim(),
             review_command: String(elements.agentReviewCommandInput.value || '').trim(),
             models: models,
-            default_model_id: String(elements.agentDefaultModelSelect.value || '').trim(),
+            default_model_id: models.includes(String(elements.agentDefaultModelSelect.value || '').trim())
+                ? String(elements.agentDefaultModelSelect.value || '').trim()
+                : '',
             extra_env: parseJsonObject(elements.agentExtraEnvTextarea.value, 'extra_env')
         };
     }
@@ -2653,9 +2851,8 @@
             });
 
             showToast('检视任务已加入队列。', 'success');
-            elements.reviewForm.reset();
-            populateHubSelect('');
-            populateAgentSelect('', '');
+            elements.mrUrlInput.value = '';
+            elements.mrUrlInput.focus();
             state.page = 1;
             await refreshReviews();
         });
@@ -2880,10 +3077,34 @@
         });
 
         elements.recordsTableBody.addEventListener('click', function(event) {
+            const copyButton = event.target.closest('[data-copy-text]');
+            if (copyButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                copyFromButton(copyButton);
+                return;
+            }
+
             const viewButton = event.target.closest('[data-view-review-id]');
             if (viewButton) {
                 const reviewId = Number(viewButton.getAttribute('data-view-review-id'));
                 loadDetail(reviewId).catch(function(error) {
+                    showToast(error.message || String(error), 'error');
+                });
+                return;
+            }
+
+            const cancelButton = event.target.closest('[data-cancel-review-id]');
+            if (cancelButton) {
+                const reviewId = Number(cancelButton.getAttribute('data-cancel-review-id'));
+                const record = state.records.find(function(item) {
+                    return Number(item.id) === reviewId;
+                }) || null;
+                runWithBusyButton(cancelButton, getCancelActionLabel(record), function() {
+                    return cancelReview(reviewId);
+                }, {
+                    preserveLabel: true
+                }).catch(function(error) {
                     showToast(error.message || String(error), 'error');
                 });
                 return;
@@ -2905,6 +3126,29 @@
             }
             prefillReviewForm(state.openDetailRecord);
         });
+
+        if (elements.detailCancelButton) {
+            elements.detailCancelButton.addEventListener('click', function() {
+                if (!state.openDetailRecord) {
+                    return;
+                }
+
+                runWithBusyButton(elements.detailCancelButton, getCancelActionLabel(state.openDetailRecord), function() {
+                    return cancelReview(state.openDetailRecord.id);
+                }, {
+                    preserveLabel: true
+                }).catch(function(error) {
+                    showToast(error.message || String(error), 'error');
+                });
+            });
+        }
+
+        if (elements.detailMrUrlCopyButton) {
+            elements.detailMrUrlCopyButton.addEventListener('click', function(event) {
+                event.preventDefault();
+                copyFromButton(elements.detailMrUrlCopyButton);
+            });
+        }
 
         document.querySelectorAll('[data-close-detail-modal]').forEach(function(node) {
             node.addEventListener('click', function() {

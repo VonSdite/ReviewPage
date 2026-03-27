@@ -212,6 +212,22 @@ class ConfigDrivenAgentTestCase(unittest.TestCase):
         self.assertEqual(env["CLICOLOR_FORCE"], "0")
         self.assertEqual(env["DEMO_AGENT_ENV"], "1")
 
+    def test_refresh_model_catalog_hides_windows_console_window(self):
+        agent = ConfigDrivenReviewAgent(_FakeCtx(), "demo-agent")
+        startupinfo = type("StartupInfo", (), {"dwFlags": 0, "wShowWindow": None})()
+
+        with patch("src.integrations.agents.config_driven_agent.os.name", "nt"):
+            with patch("src.integrations.agents.config_driven_agent.subprocess.STARTUPINFO", return_value=startupinfo, create=True):
+                with patch("src.integrations.agents.config_driven_agent.subprocess.STARTF_USESHOWWINDOW", 1, create=True):
+                    with patch("src.integrations.agents.config_driven_agent.subprocess.SW_HIDE", 0, create=True):
+                        with patch("src.integrations.agents.config_driven_agent.subprocess.CREATE_NO_WINDOW", 134217728, create=True):
+                            with patch("src.integrations.agents.config_driven_agent.subprocess.run") as mocked_run:
+                                mocked_run.return_value = _FakeCompletedProcess(returncode=0, stdout="provider/model-a\n")
+                                agent.refresh_model_catalog()
+
+        self.assertEqual(mocked_run.call_args.kwargs["creationflags"], 134217728)
+        self.assertIs(mocked_run.call_args.kwargs["startupinfo"], startupinfo)
+
     def test_build_review_command_wraps_with_configured_shell(self):
         agent = ConfigDrivenReviewAgent(
             _FakeCtx(

@@ -79,6 +79,18 @@ class ReviewRepository:
             conn.execute(
                 """
                 UPDATE review_records
+                SET status = 'cancelled',
+                    runtime_state = 'finished',
+                    error_message = '任务已取消',
+                    finished_at = ?,
+                    updated_at = ?
+                WHERE status = 'pending' AND runtime_state = 'canceling'
+                """,
+                (now, now),
+            )
+            conn.execute(
+                """
+                UPDATE review_records
                 SET runtime_state = 'queued', started_at = NULL, updated_at = ?
                 WHERE status = 'pending' AND runtime_state = 'running'
                 """,
@@ -248,6 +260,75 @@ class ReviewRepository:
                 (result_text, error_message, now, now, review_id),
             )
 
+    def mark_review_cancelled(self, review_id: int, result_text: str, error_message: str) -> None:
+        now = _utc_now()
+        with self._connection_factory() as conn:
+            conn.execute(
+                """
+                UPDATE review_records
+                SET status = 'cancelled',
+                    runtime_state = 'finished',
+                    result_text = ?,
+                    error_message = ?,
+                    finished_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (result_text, error_message, now, now, review_id),
+            )
+
+    def cancel_queued_review(self, review_id: int, error_message: str) -> dict[str, Any] | None:
+        now = _utc_now()
+        with self._connection_factory() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE review_records
+                SET status = 'cancelled',
+                    runtime_state = 'finished',
+                    error_message = ?,
+                    finished_at = ?,
+                    updated_at = ?
+                WHERE id = ? AND status = 'pending' AND runtime_state = 'queued'
+                """,
+                (error_message, now, now, review_id),
+            )
+            if int(cursor.rowcount or 0) <= 0:
+                return None
+
+            row = conn.execute(
+                """
+                SELECT *
+                FROM review_records
+                WHERE id = ?
+                """,
+                (review_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def request_running_review_cancel(self, review_id: int) -> dict[str, Any] | None:
+        now = _utc_now()
+        with self._connection_factory() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE review_records
+                SET runtime_state = 'canceling', updated_at = ?
+                WHERE id = ? AND status = 'pending' AND runtime_state IN ('running', 'canceling')
+                """,
+                (now, review_id),
+            )
+            if int(cursor.rowcount or 0) <= 0:
+                return None
+
+            row = conn.execute(
+                """
+                SELECT *
+                FROM review_records
+                WHERE id = ?
+                """,
+                (review_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
     def rename_agent(self, agent_id: str, new_agent_id: str) -> int:
         now = _utc_now()
         with self._connection_factory() as conn:
@@ -346,9 +427,10 @@ class ReviewRepository:
                 SELECT
                     COUNT(*) AS total,
                     SUM(CASE WHEN status = 'pending' AND runtime_state = 'queued' THEN 1 ELSE 0 END) AS queued,
-                    SUM(CASE WHEN status = 'pending' AND runtime_state = 'running' THEN 1 ELSE 0 END) AS running,
+                    SUM(CASE WHEN status = 'pending' AND runtime_state IN ('running', 'canceling') THEN 1 ELSE 0 END) AS running,
                     SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
-                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+                    SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled
                 FROM review_records
                 """
             ).fetchone()
@@ -359,5 +441,6 @@ class ReviewRepository:
                     "running": 0,
                     "completed": 0,
                     "failed": 0,
+                    "cancelled": 0,
                 }
             return {key: int(row[key] or 0) for key in row.keys()}

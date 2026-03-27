@@ -1,7 +1,7 @@
 {% extends "base_page.html" %}
 
 {% block page_title %}MR 检视{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260327-17">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260327-23">{% endblock %}
 {% block body_class %}review-page{% endblock %}
 
 {% block body %}
@@ -538,6 +538,7 @@
                     <span class="status-pill" id="detailStatusPill">-</span>
                 </div>
                 <div class="detail-modal-actions">
+                    <button type="button" class="secondary-button" id="detailCancelButton" hidden>取消任务</button>
                     <button type="button" class="secondary-button" id="detailPrefillButton">重试</button>
                     <button
                         type="button"
@@ -556,7 +557,23 @@
                 <dl class="detail-grid">
                     <div class="detail-item detail-item-span-2">
                         <dt>MR 地址</dt>
-                        <dd><a id="detailMrUrl" href="#" target="_blank" rel="noreferrer">-</a></dd>
+                        <dd class="detail-link-row">
+                            <a id="detailMrUrl" href="#" target="_blank" rel="noreferrer">-</a>
+                            <button
+                                type="button"
+                                class="copy-link-button"
+                                id="detailMrUrlCopyButton"
+                                data-copy-label="MR 地址"
+                                title="复制 MR 地址"
+                                aria-label="复制 MR 地址"
+                                hidden
+                            >
+                                <svg class="copy-link-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <rect x="9" y="9" width="11" height="11" rx="2.25"></rect>
+                                    <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                            </button>
+                        </dd>
                     </div>
                     <div class="detail-item">
                         <dt>平台名称</dt>
@@ -622,6 +639,6 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="/static/js/review.js?v=20260327-12"></script>
+<script src="/static/js/review.js?v=20260327-16"></script>
 
 {% endblock %}

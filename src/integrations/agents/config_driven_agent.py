@@ -9,7 +9,12 @@ import shlex
 import subprocess
 
 from ...domain import AgentModelCatalog, ModelChoice, ReviewAgent, ReviewCommandSpec
-from ...utils import decode_command_output, resolve_command_argv, strip_terminal_control_sequences
+from ...utils import (
+    build_hidden_subprocess_kwargs,
+    decode_command_output,
+    resolve_command_argv,
+    strip_terminal_control_sequences,
+)
 
 
 DEFAULT_OUTPUT_ENV = {
@@ -54,6 +59,7 @@ class ConfigDrivenReviewAgent(ReviewAgent):
                 text=False,
                 check=False,
                 env=self._build_subprocess_env(),
+                **build_hidden_subprocess_kwargs(),
             )
         except FileNotFoundError as exc:
             raise ValueError(f"未找到 Agent 命令：{exc}") from exc

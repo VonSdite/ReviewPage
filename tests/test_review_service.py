@@ -4,6 +4,8 @@
 import copy
 import logging
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -11,7 +13,7 @@ from unittest.mock import patch
 from src.domain import AgentModelCatalog, MergeRequestTarget, ModelChoice, ReviewCommandSpec
 from src.repositories import ReviewRepository
 from src.services.review_service import ReviewService
-from src.utils import create_connection_factory
+from src.utils import CommandCancelledError, create_connection_factory
 
 
 def _build_fake_agents(ctx):
@@ -353,6 +355,76 @@ class ReviewServiceTestCase(unittest.TestCase):
         self.assertFalse(settings["agents"][0]["is_default"])
         self.assertFalse(settings["hubs"][0]["is_default"])
 
+    def test_cancel_queued_review_marks_record_cancelled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service, _ctx = self.create_service(tmpdir)
+
+            created = service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/10",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            cancelled = service.cancel_review(int(created["id"]))
+            detail = service.get_review_detail(int(created["id"]))
+
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(cancelled["runtime_state"], "finished")
+        self.assertIsNone(cancelled["queue_position"])
+        self.assertEqual(detail["status"], "cancelled")
+        self.assertEqual(detail["error_message"], "任务已取消")
+
+    def test_cancel_running_review_stops_active_command(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service, _ctx = self.create_service(tmpdir)
+
+            created = service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/10-running",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            review_started = threading.Event()
+
+            class _FakeResult:
+                def __init__(self, returncode, output):
+                    self.returncode = returncode
+                    self.output = output
+
+            def fake_stream_command(argv, cwd, env=None, on_output=None, cancel_requested=None):
+                if argv and argv[0] == "git":
+                    return _FakeResult(0, "clone ok")
+
+                review_started.set()
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    if cancel_requested and cancel_requested():
+                        raise CommandCancelledError(output="partial output")
+                    time.sleep(0.05)
+                raise AssertionError("cancel_requested was never observed")
+
+            with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
+                worker = threading.Thread(target=service.execute_next_review, daemon=True)
+                worker.start()
+                self.assertTrue(review_started.wait(timeout=1))
+
+                cancel_response = service.cancel_review(int(created["id"]))
+                worker.join(timeout=2)
+
+            self.assertFalse(worker.is_alive())
+            detail = service.get_review_detail(int(created["id"]))
+
+        self.assertIn(cancel_response["runtime_state"], {"canceling", "finished"})
+        self.assertEqual(detail["status"], "cancelled")
+        self.assertEqual(detail["runtime_state"], "finished")
+        self.assertEqual(detail["error_message"], "任务已取消")
+
     def test_execute_review_always_deletes_workspace_on_failure(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir) / "workspaces"
@@ -414,6 +486,42 @@ class ReviewServiceTestCase(unittest.TestCase):
             self.assertTrue(handled)
             self.assertTrue(temp_root.exists())
             self.assertTrue(sibling_workspace.exists())
+
+    def test_execute_review_prunes_empty_directories_left_by_partial_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir) / "workspaces"
+            service, _ctx = self.create_service(str(temp_root))
+
+            service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/13",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            class _FakeResult:
+                def __init__(self, returncode, output):
+                    self.returncode = returncode
+                    self.output = output
+
+            def partial_rmtree(path, *args, **kwargs):
+                workspace_path = Path(path)
+                for child in sorted(workspace_path.rglob("*"), key=lambda item: len(item.parts), reverse=True):
+                    if child.is_file():
+                        child.unlink()
+
+            with patch("src.services.review_service.stream_command") as mocked_stream_command:
+                mocked_stream_command.side_effect = [
+                    _FakeResult(0, "clone ok"),
+                    _FakeResult(1, "review failed"),
+                ]
+                with patch("src.services.review_service.shutil.rmtree", side_effect=partial_rmtree):
+                    handled = service.execute_next_review()
+
+        self.assertTrue(handled)
+        self.assertFalse(temp_root.exists())
 
     def test_refresh_agent_models_returns_latest_settings_payload(self):
         with tempfile.TemporaryDirectory() as tmpdir:

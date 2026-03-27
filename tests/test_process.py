@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import sys
+import threading
+import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from src.utils.process import (
+    CommandCancelledError,
+    build_hidden_subprocess_kwargs,
     decode_command_output,
     resolve_command_argv,
     stream_command,
@@ -50,6 +56,21 @@ class ProcessTestCase(unittest.TestCase):
 
         self.assertEqual(strip_terminal_control_sequences(value), "build link")
 
+    def test_build_hidden_subprocess_kwargs_uses_windows_no_window_flags(self):
+        startupinfo = SimpleNamespace(dwFlags=0, wShowWindow=None)
+
+        with patch("src.utils.process.os.name", "nt"):
+            with patch("src.utils.process.subprocess.STARTUPINFO", return_value=startupinfo, create=True):
+                with patch("src.utils.process.subprocess.STARTF_USESHOWWINDOW", 1, create=True):
+                    with patch("src.utils.process.subprocess.SW_HIDE", 0, create=True):
+                        with patch("src.utils.process.subprocess.CREATE_NO_WINDOW", 134217728, create=True):
+                            kwargs = build_hidden_subprocess_kwargs()
+
+        self.assertEqual(kwargs["creationflags"], 134217728)
+        self.assertIs(kwargs["startupinfo"], startupinfo)
+        self.assertEqual(startupinfo.dwFlags, 1)
+        self.assertEqual(startupinfo.wShowWindow, 0)
+
     def test_stream_command_uses_resolved_executable(self):
         process = MagicMock()
         process.stdout = iter(["provider/model-a\n".encode("utf-8")])
@@ -71,6 +92,27 @@ class ProcessTestCase(unittest.TestCase):
         )
         self.assertEqual(mocked_popen.call_args.kwargs["bufsize"], -1)
 
+    def test_stream_command_hides_windows_console_window(self):
+        process = MagicMock()
+        process.stdout = iter([])
+        process.wait.return_value = 0
+        startupinfo = SimpleNamespace(dwFlags=0, wShowWindow=None)
+
+        with patch("src.utils.process.os.name", "nt"):
+            with patch("src.utils.process.resolve_command_argv") as mocked_resolve:
+                mocked_resolve.return_value = ["opencode.CMD", "models"]
+                with patch("src.utils.process.subprocess.STARTUPINFO", return_value=startupinfo, create=True):
+                    with patch("src.utils.process.subprocess.STARTF_USESHOWWINDOW", 1, create=True):
+                        with patch("src.utils.process.subprocess.SW_HIDE", 0, create=True):
+                            with patch("src.utils.process.subprocess.CREATE_NO_WINDOW", 134217728, create=True):
+                                with patch("src.utils.process.subprocess.Popen") as mocked_popen:
+                                    mocked_popen.return_value = process
+
+                                    stream_command(["opencode", "models"], cwd=Path("."))
+
+        self.assertTrue(mocked_popen.call_args.kwargs["creationflags"] & 134217728)
+        self.assertIs(mocked_popen.call_args.kwargs["startupinfo"], startupinfo)
+
     def test_stream_command_strips_terminal_control_sequences(self):
         process = MagicMock()
         process.stdout = iter(
@@ -88,6 +130,30 @@ class ProcessTestCase(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.output, "build \u2713")
+
+    def test_stream_command_stops_when_cancel_requested(self):
+        cancel_event = threading.Event()
+
+        def trigger_cancel():
+            time.sleep(0.3)
+            cancel_event.set()
+
+        trigger_thread = threading.Thread(target=trigger_cancel, daemon=True)
+        trigger_thread.start()
+
+        with self.assertRaises(CommandCancelledError) as context:
+            stream_command(
+                [
+                    sys.executable,
+                    "-c",
+                    "import time; print('started', flush=True); time.sleep(10)",
+                ],
+                cwd=Path("."),
+                cancel_requested=cancel_event.is_set,
+            )
+
+        trigger_thread.join(timeout=1)
+        self.assertIn("started", context.exception.output)
 
 
 if __name__ == "__main__":

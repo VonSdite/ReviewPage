@@ -5,8 +5,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import os
 import shutil
+import stat
 import tempfile
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable
@@ -15,7 +19,13 @@ from ..application.app_context import AppContext
 from ..domain import ReviewAgent, ReviewHub, get_registered_hub_types
 from ..integrations import build_config_driven_agents, build_configured_hubs
 from ..integrations.agents import ConfigDrivenReviewAgent
-from ..utils import format_command, stream_command
+from ..utils import CommandCancelledError, format_command, stream_command
+
+
+class ReviewCancelledError(RuntimeError):
+    def __init__(self, output: str = "", message: str = "任务已取消"):
+        super().__init__(message)
+        self.output = output
 
 
 class ReviewService:
@@ -35,6 +45,10 @@ class ReviewService:
         self._review_repository = review_repository
         self._agents = agents
         self._hubs = hubs
+        self._execution_lock = threading.Lock()
+        self._active_review_id: int | None = None
+        self._active_cancel_event: threading.Event | None = None
+        self._requested_cancel_ids: set[int] = set()
 
     def get_metadata(self) -> dict[str, object]:
         agents_meta = [agent.to_metadata() for agent in self._agents.values()]
@@ -131,6 +145,48 @@ class ReviewService:
         detail = self._serialize_review_row(row, queue_positions)
         detail["logs"] = self._review_repository.list_review_logs(review_id)
         return detail
+
+    def cancel_review(self, review_id: int) -> dict[str, object]:
+        cancel_message = "任务已取消"
+        row = self._review_repository.get_review(review_id)
+        if row is None:
+            raise ValueError("review record not found")
+
+        status = str(row.get("status") or "")
+        runtime_state = str(row.get("runtime_state") or "")
+        if status == "cancelled":
+            return self._serialize_review_row(row, self._review_repository.get_queue_positions())
+        if status != "pending":
+            raise ValueError("当前任务已结束，无法取消")
+
+        if runtime_state == "queued":
+            cancelled_row = self._review_repository.cancel_queued_review(review_id, cancel_message)
+            if cancelled_row is not None:
+                return self._serialize_review_row(cancelled_row, self._review_repository.get_queue_positions())
+
+            row = self._review_repository.get_review(review_id)
+            if row is None:
+                raise ValueError("review record not found")
+            status = str(row.get("status") or "")
+            runtime_state = str(row.get("runtime_state") or "")
+            if status == "cancelled":
+                return self._serialize_review_row(row, self._review_repository.get_queue_positions())
+            if status != "pending":
+                raise ValueError("当前任务已结束，无法取消")
+
+        if runtime_state in {"running", "canceling"}:
+            self._request_review_cancel(review_id)
+            updated_row = self._review_repository.request_running_review_cancel(review_id)
+            if updated_row is None:
+                row = self._review_repository.get_review(review_id)
+                if row is None:
+                    raise ValueError("review record not found")
+                if str(row.get("status") or "") == "cancelled":
+                    return self._serialize_review_row(row, self._review_repository.get_queue_positions())
+                raise ValueError("当前任务已结束，无法取消")
+            return self._serialize_review_row(updated_row, self._review_repository.get_queue_positions())
+
+        raise ValueError("当前任务状态不支持取消")
 
     def refresh_agent_models(self, agent_id: str) -> dict[str, object]:
         agent = self._agents.get(agent_id)
@@ -296,7 +352,38 @@ class ReviewService:
         }
 
     def reset_running_reviews(self) -> None:
+        with self._execution_lock:
+            self._active_review_id = None
+            self._active_cancel_event = None
+            self._requested_cancel_ids.clear()
         self._review_repository.reset_running_pending_reviews()
+
+    def _request_review_cancel(self, review_id: int) -> None:
+        with self._execution_lock:
+            self._requested_cancel_ids.add(review_id)
+            if self._active_review_id == review_id and self._active_cancel_event is not None:
+                self._active_cancel_event.set()
+
+    def _activate_review(self, review_id: int) -> threading.Event:
+        cancel_event = threading.Event()
+        with self._execution_lock:
+            if review_id in self._requested_cancel_ids:
+                cancel_event.set()
+            self._active_review_id = review_id
+            self._active_cancel_event = cancel_event
+        return cancel_event
+
+    def _clear_active_review(self, review_id: int) -> None:
+        with self._execution_lock:
+            self._requested_cancel_ids.discard(review_id)
+            if self._active_review_id == review_id:
+                self._active_review_id = None
+                self._active_cancel_event = None
+
+    @staticmethod
+    def _raise_if_cancel_requested(cancel_event: threading.Event) -> None:
+        if cancel_event.is_set():
+            raise ReviewCancelledError()
 
     def execute_next_review(self) -> bool:
         row = self._review_repository.claim_next_pending_review()
@@ -314,6 +401,7 @@ class ReviewService:
         temp_root.mkdir(parents=True, exist_ok=True)
         workspace_dir = Path(tempfile.mkdtemp(prefix=f"review-{review_id}-", dir=str(temp_root)))
         repo_dir = workspace_dir / "repo"
+        cancel_event = self._activate_review(review_id)
 
         log_sequence = int(row.get("last_log_seq") or 0)
         review_output = ""
@@ -326,6 +414,7 @@ class ReviewService:
             self._logger.info("[review:%s] %s", review_id, normalized)
 
         try:
+            self._raise_if_cancel_requested(cancel_event)
             append_log("[system] 开始解析检视地址")
             target = hub.resolve_review_target(str(row["mr_url"]))
             command_spec = agent.build_review_command(
@@ -362,18 +451,26 @@ class ReviewService:
                 target.repo_url,
                 str(repo_dir),
             ]
+            self._raise_if_cancel_requested(cancel_event)
             append_log(f"[command] {format_command(clone_command)}")
-            clone_result = stream_command(clone_command, cwd=workspace_dir, on_output=append_log)
+            clone_result = stream_command(
+                clone_command,
+                cwd=workspace_dir,
+                on_output=append_log,
+                cancel_requested=cancel_event.is_set,
+            )
             if clone_result.returncode != 0:
                 review_output = clone_result.output.strip()
                 raise RuntimeError(f"git clone 失败，退出码 {clone_result.returncode}")
 
+            self._raise_if_cancel_requested(cancel_event)
             append_log(f"[command] {format_command(command_spec.argv)}")
             review_result = stream_command(
                 command_spec.argv,
                 cwd=repo_dir,
                 env=command_spec.env,
                 on_output=append_log,
+                cancel_requested=cancel_event.is_set,
             )
             review_output = review_result.output.strip()
             if review_result.returncode != 0:
@@ -382,19 +479,127 @@ class ReviewService:
             append_log("[system] 检视执行完成")
             result_text = review_output or "检视已完成，但命令没有输出结果。"
             self._review_repository.mark_review_completed(review_id, result_text)
+        except CommandCancelledError as exc:
+            review_output = exc.output.strip()
+            message = "任务已取消"
+            append_log(f"[system] {message}")
+            self._review_repository.mark_review_cancelled(review_id, review_output, message)
+        except ReviewCancelledError as exc:
+            review_output = exc.output.strip()
+            message = str(exc) or "任务已取消"
+            append_log(f"[system] {message}")
+            self._review_repository.mark_review_cancelled(review_id, review_output, message)
         except Exception as exc:
             message = str(exc) or exc.__class__.__name__
             append_log(f"[system] 检视失败：{message}")
             self._review_repository.mark_review_failed(review_id, review_output, message)
         finally:
-            shutil.rmtree(workspace_dir, ignore_errors=True)
-            try:
-                temp_root.rmdir()
-            except OSError:
-                pass
-            else:
-                append_log(f"[system] 临时根目录已清理：{temp_root}")
+            self._clear_active_review(review_id)
+            self._cleanup_workspace(workspace_dir, temp_root, append_log)
+
+    def _cleanup_workspace(
+        self,
+        workspace_dir: Path,
+        temp_root: Path,
+        append_log: Callable[[str], None],
+    ) -> None:
+        if self._remove_directory_tree(workspace_dir):
             append_log(f"[system] 临时目录已清理：{workspace_dir}")
+        else:
+            append_log(f"[system] 临时目录清理失败，仍有残留：{workspace_dir}")
+
+        try:
+            temp_root.rmdir()
+        except OSError:
+            return
+
+        append_log(f"[system] 临时根目录已清理：{temp_root}")
+
+    def _remove_directory_tree(
+        self,
+        path: Path,
+        *,
+        attempts: int = 3,
+        retry_delay_seconds: float = 0.2,
+    ) -> bool:
+        if not path.exists():
+            return True
+
+        last_error: OSError | None = None
+        for attempt in range(attempts):
+            try:
+                shutil.rmtree(path, onerror=self._handle_rmtree_error)
+            except FileNotFoundError:
+                return True
+            except OSError as exc:
+                last_error = exc
+
+            if self._prune_empty_directories(path):
+                return True
+
+            try:
+                path.rmdir()
+            except FileNotFoundError:
+                return True
+            except OSError as exc:
+                last_error = exc
+            else:
+                return True
+
+            if attempt + 1 < attempts:
+                time.sleep(retry_delay_seconds)
+
+        if path.exists():
+            self._logger.warning("Failed to fully remove workspace directory %s: %s", path, last_error)
+            return False
+        return True
+
+    @staticmethod
+    def _handle_rmtree_error(func, failed_path, exc_info) -> None:
+        error = exc_info[1]
+        if isinstance(error, FileNotFoundError):
+            return
+
+        try:
+            current_mode = os.stat(failed_path).st_mode
+            os.chmod(failed_path, current_mode | stat.S_IWRITE)
+        except OSError:
+            pass
+
+        try:
+            func(failed_path)
+        except FileNotFoundError:
+            return
+        except OSError:
+            return
+
+    @staticmethod
+    def _prune_empty_directories(path: Path) -> bool:
+        if not path.exists():
+            return True
+
+        directories: list[Path] = []
+        for child in path.rglob("*"):
+            try:
+                if child.is_dir():
+                    directories.append(child)
+            except OSError:
+                continue
+
+        directories.sort(key=lambda item: len(item.parts), reverse=True)
+        for directory in directories:
+            try:
+                directory.rmdir()
+            except OSError:
+                continue
+
+        try:
+            path.rmdir()
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False
+        return True
 
     def _serialize_review_row(
         self,
@@ -405,8 +610,12 @@ class ReviewService:
         status = str(row.get("status") or "pending")
         runtime_state = str(row.get("runtime_state") or "queued")
 
-        if status == "pending" and runtime_state == "running":
+        if status == "cancelled":
+            status_label = "已取消"
+        elif status == "pending" and runtime_state == "running":
             status_label = "执行中"
+        elif status == "pending" and runtime_state == "canceling":
+            status_label = "停止中"
         elif status == "pending":
             status_label = "待执行"
         elif status == "completed":

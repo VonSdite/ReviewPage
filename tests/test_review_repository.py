@@ -129,6 +129,51 @@ class ReviewRepositoryTestCase(unittest.TestCase):
         self.assertEqual(first_detail["hub_id"], "gitlab-public")
         self.assertEqual(second_detail["hub_id"], "gitlab-public")
 
+    def test_cancel_queued_review_marks_record_cancelled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "review.db"
+            repository = ReviewRepository(create_connection_factory(db_path))
+
+            created = repository.create_review(
+                mr_url="https://gitlab.example.com/group/project/-/merge_requests/8",
+                hub_id="gitlab",
+                agent_id="opencode",
+                model_id="provider/model-a",
+            )
+
+            cancelled = repository.cancel_queued_review(int(created["id"]), "任务已取消")
+            detail = repository.get_review(int(created["id"]))
+            stats = repository.get_review_stats()
+
+        self.assertIsNotNone(cancelled)
+        self.assertEqual(detail["status"], "cancelled")
+        self.assertEqual(detail["runtime_state"], "finished")
+        self.assertEqual(detail["error_message"], "任务已取消")
+        self.assertEqual(stats["cancelled"], 1)
+
+    def test_request_running_review_cancel_marks_runtime_state(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "review.db"
+            repository = ReviewRepository(create_connection_factory(db_path))
+
+            created = repository.create_review(
+                mr_url="https://gitlab.example.com/group/project/-/merge_requests/9",
+                hub_id="gitlab",
+                agent_id="opencode",
+                model_id="provider/model-a",
+            )
+            claimed = repository.claim_next_pending_review()
+
+            canceling = repository.request_running_review_cancel(int(created["id"]))
+            repository.reset_running_pending_reviews()
+            detail = repository.get_review(int(created["id"]))
+
+        self.assertEqual(claimed["runtime_state"], "running")
+        self.assertIsNotNone(canceling)
+        self.assertEqual(canceling["runtime_state"], "canceling")
+        self.assertEqual(detail["status"], "cancelled")
+        self.assertEqual(detail["runtime_state"], "finished")
+
 
 if __name__ == "__main__":
     unittest.main()
