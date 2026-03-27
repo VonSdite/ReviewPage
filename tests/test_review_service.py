@@ -425,6 +425,119 @@ class ReviewServiceTestCase(unittest.TestCase):
         self.assertEqual(detail["runtime_state"], "finished")
         self.assertEqual(detail["error_message"], "任务已取消")
 
+    def test_delete_queued_review_removes_record(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service, _ctx = self.create_service(tmpdir)
+
+            created = service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/10-delete",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            payload = service.delete_review(int(created["id"]))
+            detail = service.get_review_detail(int(created["id"]))
+            listing = service.list_reviews()
+
+        self.assertEqual(
+            payload,
+            {
+                "id": int(created["id"]),
+                "deleted": True,
+                "stopped": False,
+            },
+        )
+        self.assertIsNone(detail)
+        self.assertEqual(listing["pagination"]["total"], 0)
+
+    def test_delete_running_review_waits_for_cleanup_before_removing_record(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service, _ctx = self.create_service(tmpdir)
+
+            created = service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/10-delete-running",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            review_id = int(created["id"])
+            review_started = threading.Event()
+            cleanup_errors = []
+            delete_errors = []
+            delete_result = {}
+
+            class _FakeResult:
+                def __init__(self, returncode, output):
+                    self.returncode = returncode
+                    self.output = output
+
+            def fake_stream_command(argv, cwd, env=None, on_output=None, cancel_requested=None):
+                if argv and argv[0] == "git":
+                    return _FakeResult(0, "clone ok")
+
+                review_started.set()
+                deadline = time.time() + 5
+                while time.time() < deadline:
+                    if cancel_requested and cancel_requested():
+                        raise CommandCancelledError(output="partial output")
+                    time.sleep(0.05)
+                raise AssertionError("cancel_requested was never observed")
+
+            original_cleanup_workspace = service._cleanup_workspace
+
+            def wrapped_cleanup_workspace(workspace_dir, temp_root, append_log):
+                try:
+                    if service.get_review_detail(review_id) is None:
+                        raise AssertionError("review was deleted before cleanup started")
+                    time.sleep(0.2)
+                    if service.get_review_detail(review_id) is None:
+                        raise AssertionError("review was deleted during cleanup")
+                except Exception as exc:  # pragma: no cover - assertion path
+                    cleanup_errors.append(exc)
+                original_cleanup_workspace(workspace_dir, temp_root, append_log)
+
+            def run_delete_review():
+                try:
+                    delete_result.update(service.delete_review(review_id))
+                except Exception as exc:  # pragma: no cover - assertion path
+                    delete_errors.append(exc)
+
+            with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
+                with patch.object(service, "_cleanup_workspace", side_effect=wrapped_cleanup_workspace):
+                    worker = threading.Thread(target=service.execute_next_review, daemon=True)
+                    worker.start()
+                    self.assertTrue(review_started.wait(timeout=1))
+
+                    delete_thread = threading.Thread(target=run_delete_review, daemon=True)
+                    delete_thread.start()
+                    delete_thread.join(timeout=3)
+                    worker.join(timeout=3)
+
+            if cleanup_errors:
+                raise cleanup_errors[0]
+            if delete_errors:
+                raise delete_errors[0]
+
+            detail = service.get_review_detail(review_id)
+
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(delete_thread.is_alive())
+        self.assertEqual(
+            delete_result,
+            {
+                "id": review_id,
+                "deleted": True,
+                "stopped": True,
+            },
+        )
+        self.assertIsNone(detail)
+
     def test_execute_review_always_deletes_workspace_on_failure(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir) / "workspaces"
@@ -522,6 +635,46 @@ class ReviewServiceTestCase(unittest.TestCase):
 
         self.assertTrue(handled)
         self.assertFalse(temp_root.exists())
+
+    def test_execute_review_appends_external_log_excerpt_on_agent_failure(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir) / "workspaces"
+            service, _ctx = self.create_service(str(temp_root))
+            created = service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/14",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            external_log = Path(tmpdir) / "opencode.log"
+            external_log.write_text("line one\nline two\n", encoding="utf-8")
+
+            class _FakeResult:
+                def __init__(self, returncode, output):
+                    self.returncode = returncode
+                    self.output = output
+
+            with patch("src.services.review_service.stream_command") as mocked_stream_command:
+                mocked_stream_command.side_effect = [
+                    _FakeResult(0, "clone ok"),
+                    _FakeResult(
+                        1,
+                        f"Error: Unexpected error, check log file at {external_log} for more details",
+                    ),
+                ]
+                handled = service.execute_next_review()
+
+            detail = service.get_review_detail(int(created["id"]))
+
+        self.assertTrue(handled)
+        self.assertIsNotNone(detail)
+        joined_logs = "\n".join(item["line"] for item in detail["logs"])
+        self.assertIn("检测到外部日志文件", joined_logs)
+        self.assertIn("[external-log] line one", joined_logs)
+        self.assertIn("[external-log] line two", joined_logs)
 
     def test_refresh_agent_models_returns_latest_settings_payload(self):
         with tempfile.TemporaryDirectory() as tmpdir:

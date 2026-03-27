@@ -174,6 +174,52 @@ class ReviewRepositoryTestCase(unittest.TestCase):
         self.assertEqual(detail["status"], "cancelled")
         self.assertEqual(detail["runtime_state"], "finished")
 
+    def test_delete_review_removes_record_and_logs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "review.db"
+            repository = ReviewRepository(create_connection_factory(db_path))
+
+            created = repository.create_review(
+                mr_url="https://gitlab.example.com/group/project/-/merge_requests/15",
+                hub_id="gitlab",
+                agent_id="opencode",
+                model_id="provider/model-a",
+            )
+            claimed = repository.claim_next_pending_review()
+            repository.append_review_log(int(created["id"]), 1, "[system] started")
+            repository.mark_review_completed(int(created["id"]), "done")
+
+            deleted = repository.delete_review(int(created["id"]))
+            detail = repository.get_review(int(created["id"]))
+            logs = repository.list_review_logs(int(created["id"]))
+            stats = repository.get_review_stats()
+
+        self.assertEqual(claimed["runtime_state"], "running")
+        self.assertTrue(deleted)
+        self.assertIsNone(detail)
+        self.assertEqual(logs, [])
+        self.assertEqual(stats["total"], 0)
+
+    def test_delete_review_returns_false_for_running_review(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "review.db"
+            repository = ReviewRepository(create_connection_factory(db_path))
+
+            created = repository.create_review(
+                mr_url="https://gitlab.example.com/group/project/-/merge_requests/16",
+                hub_id="gitlab",
+                agent_id="opencode",
+                model_id="provider/model-a",
+            )
+            repository.claim_next_pending_review()
+
+            deleted = repository.delete_review(int(created["id"]))
+            detail = repository.get_review(int(created["id"]))
+
+        self.assertFalse(deleted)
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail["runtime_state"], "running")
+
 
 if __name__ == "__main__":
     unittest.main()

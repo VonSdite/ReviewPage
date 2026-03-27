@@ -580,7 +580,7 @@
 }
 
 .settings-table-name {
-    font-weight: 700;
+    font-weight: 400;
     font-size: var(--font-size-md);
     line-height: 1.5;
     overflow-wrap: anywhere;
@@ -686,7 +686,7 @@
 }
 
 .settings-modal-dialog {
-    width: min(1240px, calc(100vw - 32px));
+    width: min(1080px, calc(100vw - 40px));
 }
 
 .settings-modal-heading {
@@ -696,10 +696,6 @@
 
 .settings-modal-content {
     padding-top: 0;
-}
-
-#hubSettingsModal .settings-modal-dialog {
-    width: min(980px, calc(100vw - 32px));
 }
 
 #hubSettingsModal .settings-modal-content {
@@ -729,6 +725,10 @@
     gap: 12px;
 }
 
+.settings-env-field {
+    gap: 12px;
+}
+
 .settings-models-field-head {
     display: flex;
     align-items: center;
@@ -744,6 +744,51 @@
     gap: 12px;
     flex-wrap: nowrap;
     margin-left: auto;
+}
+
+.settings-env-field-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.settings-env-list {
+    display: grid;
+    gap: 10px;
+}
+
+.settings-env-row {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.9fr) minmax(260px, 1.2fr) auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.settings-env-row input {
+    min-height: 42px;
+}
+
+.settings-env-remove-button {
+    min-width: 68px;
+    justify-self: end;
+}
+
+.settings-env-empty {
+    padding: 14px 16px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 14px;
+    background: var(--surface-soft);
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-compact);
+}
+
+.settings-field-hint {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-compact);
 }
 
 .settings-model-default-inline {
@@ -945,7 +990,7 @@
 
 .record-title {
     font-size: var(--font-size-md);
-    font-weight: 700;
+    font-weight: 400;
     line-height: 1.5;
     overflow-wrap: anywhere;
 }
@@ -972,20 +1017,29 @@
 
 .record-link-row,
 .detail-link-row {
+    position: relative;
     display: inline-block;
     max-width: 100%;
+    width: fit-content;
+    min-height: 24px;
+    padding-right: 32px;
     vertical-align: top;
+    box-sizing: border-box;
+    justify-self: start;
 }
 
 .record-link-row .record-link,
 .detail-link-row a {
-    display: inline;
+    display: block;
 }
 
 .copy-link-button {
+    position: absolute;
+    top: 0;
+    right: 0;
     width: 24px;
     height: 24px;
-    margin: 0 0 0 4px;
+    margin: 0;
     padding: 0;
     border: 1px solid rgba(198, 208, 219, 0.92);
     border-radius: 7px;
@@ -995,11 +1049,10 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    vertical-align: text-top;
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.92),
         0 1px 2px rgba(15, 23, 42, 0.08);
-    transition: background-color var(--transition), border-color var(--transition), color var(--transition), box-shadow var(--transition), transform var(--transition);
+    transition: background-color var(--transition), border-color var(--transition), color var(--transition), box-shadow var(--transition), opacity var(--transition), transform var(--transition);
 }
 
 .copy-link-button:hover,
@@ -1036,15 +1089,11 @@
 
 @media (hover: hover) and (pointer: fine) {
     .copy-link-button {
-        width: 0;
-        height: 20px;
-        margin-left: 0;
-        border-width: 0;
         opacity: 0;
+        visibility: hidden;
         pointer-events: none;
-        overflow: hidden;
         box-shadow: none;
-        transform: translateY(-1px);
+        transform: translateY(-1px) scale(0.92);
     }
 
     .record-link-row:hover .copy-link-button,
@@ -1053,16 +1102,13 @@
     .detail-link-row:focus-within .copy-link-button,
     .copy-link-button:focus-visible,
     .copy-link-button.is-copied {
-        width: 24px;
-        height: 24px;
-        margin-left: 4px;
-        border-width: 1px;
         opacity: 1;
+        visibility: visible;
         pointer-events: auto;
         box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 0.92),
             0 1px 2px rgba(15, 23, 42, 0.08);
-        transform: translateY(0);
+        transform: translateY(0) scale(1);
     }
 }
 
@@ -1190,7 +1236,7 @@
 .record-actions {
     display: flex;
     justify-content: flex-start;
-    gap: 8px;
+    gap: 6px;
     flex-wrap: nowrap;
 }
 
@@ -1228,7 +1274,8 @@
 
 .table-action-button-edit,
 #settingsDeleteCancelButton,
-#reviewCancelCancelButton {
+#reviewCancelCancelButton,
+#reviewDeleteCancelButton {
     color: var(--primary);
     background: #edf4fc;
     border-color: #d6e4f1;
@@ -1239,7 +1286,9 @@
 #settingsDeleteCancelButton:hover,
 #settingsDeleteCancelButton:focus-visible,
 #reviewCancelCancelButton:hover,
-#reviewCancelCancelButton:focus-visible {
+#reviewCancelCancelButton:focus-visible,
+#reviewDeleteCancelButton:hover,
+#reviewDeleteCancelButton:focus-visible {
     color: #ffffff;
     background: var(--primary);
     border-color: var(--primary);
@@ -1293,7 +1342,7 @@
 .detail-modal-dialog {
     position: relative;
     z-index: 1;
-    width: min(1180px, calc(100vw - 40px));
+    width: min(980px, calc(100vw - 40px));
     max-height: calc(100vh - 48px);
 }
 
@@ -1382,7 +1431,7 @@
 }
 
 .agent-fetch-models-dialog {
-    width: min(880px, calc(100vw - 32px));
+    width: min(980px, calc(100vw - 40px));
 }
 
 .agent-fetch-models-heading {
@@ -1537,7 +1586,7 @@
 }
 
 .agent-model-list-dialog {
-    width: min(840px, calc(100vw - 32px));
+    width: min(980px, calc(100vw - 40px));
 }
 
 .agent-model-list-heading {
@@ -1621,7 +1670,8 @@
 }
 
 .floating-delete-popover[hidden],
-.floating-review-cancel-popover[hidden] {
+.floating-review-cancel-popover[hidden],
+.floating-review-delete-popover[hidden] {
     display: none !important;
 }
 
@@ -1665,7 +1715,7 @@
 .inline-confirm-text {
     color: var(--text-primary);
     font-size: var(--font-size-sm);
-    font-weight: 600;
+    font-weight: 400;
     line-height: var(--line-height-compact);
     white-space: nowrap;
 }
@@ -1764,7 +1814,8 @@
 
 :root[data-theme="dark"] .table-action-button-edit,
 :root[data-theme="dark"] #settingsDeleteCancelButton,
-:root[data-theme="dark"] #reviewCancelCancelButton {
+:root[data-theme="dark"] #reviewCancelCancelButton,
+:root[data-theme="dark"] #reviewDeleteCancelButton {
     background: #1b2230;
     border-color: #30363d;
     color: var(--primary);
@@ -1775,7 +1826,9 @@
 :root[data-theme="dark"] #settingsDeleteCancelButton:hover,
 :root[data-theme="dark"] #settingsDeleteCancelButton:focus-visible,
 :root[data-theme="dark"] #reviewCancelCancelButton:hover,
-:root[data-theme="dark"] #reviewCancelCancelButton:focus-visible {
+:root[data-theme="dark"] #reviewCancelCancelButton:focus-visible,
+:root[data-theme="dark"] #reviewDeleteCancelButton:hover,
+:root[data-theme="dark"] #reviewDeleteCancelButton:focus-visible {
     background: var(--primary);
     border-color: var(--primary);
     color: #ffffff;
@@ -1941,7 +1994,7 @@ body.review-page.modal-open {
 @media (max-width: 1380px) {
     .settings-modal-dialog,
     .detail-modal-dialog {
-        width: min(1120px, calc(100vw - 32px));
+        width: min(980px, calc(100vw - 32px));
     }
 }
 
@@ -1995,12 +2048,21 @@ body.review-page.modal-open {
     }
 
     .settings-models-field-head,
-    .settings-models-field-actions {
+    .settings-models-field-actions,
+    .settings-env-field-head {
         align-items: stretch;
     }
 
     .settings-model-default-inline {
         min-width: 220px;
+    }
+
+    .settings-env-row {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-env-remove-button {
+        justify-self: start;
     }
 }
 
@@ -2063,7 +2125,8 @@ body.review-page.modal-open {
     }
 
     .settings-models-field-head,
-    .settings-models-field-actions {
+    .settings-models-field-actions,
+    .settings-env-field-head {
         width: 100%;
         flex-direction: column;
         justify-content: flex-start;
@@ -2086,15 +2149,14 @@ body.review-page.modal-open {
         flex-direction: column;
     }
 
-    .agent-fetch-models-dialog {
-        width: min(100vw - 20px, 720px);
-    }
-
     .agent-fetch-model-item {
         align-items: flex-start;
         flex-direction: column;
     }
 
+    .settings-modal-dialog,
+    .detail-modal-dialog,
+    .agent-fetch-models-dialog,
     .agent-model-list-dialog {
         width: min(100vw - 20px, 720px);
     }

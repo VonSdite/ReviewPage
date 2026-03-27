@@ -41,6 +41,9 @@
         pendingReviewCancelId: '',
         pendingReviewCancelSource: '',
         cancelingReviewCancelId: '',
+        pendingReviewDeleteId: '',
+        pendingReviewDeleteSource: '',
+        deletingReviewDeleteId: '',
         pendingSettingsDeleteKind: '',
         pendingSettingsDeleteId: '',
         deletingSettingsDeleteKey: '',
@@ -97,7 +100,9 @@
         elements.agentReviewCommandInput = document.getElementById('agentReviewCommandInput');
         elements.agentDefaultModelSelect = document.getElementById('agentDefaultModelSelect');
         elements.agentModelsTextarea = document.getElementById('agentModelsTextarea');
-        elements.agentExtraEnvTextarea = document.getElementById('agentExtraEnvTextarea');
+        elements.agentExtraEnvField = document.getElementById('agentExtraEnvField');
+        elements.agentExtraEnvList = document.getElementById('agentExtraEnvList');
+        elements.agentAddEnvRowButton = document.getElementById('agentAddEnvRowButton');
         elements.agentRefreshModelsButton = document.getElementById('agentRefreshModelsButton');
         elements.agentSaveButton = document.getElementById('agentSaveButton');
         elements.agentFetchModelsModal = document.getElementById('agentFetchModelsModal');
@@ -146,6 +151,10 @@
         elements.reviewCancelConfirmText = document.getElementById('reviewCancelConfirmText');
         elements.reviewCancelCancelButton = document.getElementById('reviewCancelCancelButton');
         elements.reviewCancelConfirmButton = document.getElementById('reviewCancelConfirmButton');
+        elements.reviewDeletePopover = document.getElementById('reviewDeletePopover');
+        elements.reviewDeleteConfirmText = document.getElementById('reviewDeleteConfirmText');
+        elements.reviewDeleteCancelButton = document.getElementById('reviewDeleteCancelButton');
+        elements.reviewDeleteConfirmButton = document.getElementById('reviewDeleteConfirmButton');
 
         elements.queueRefreshButton = document.getElementById('queueRefreshButton');
         elements.autoRefreshToggleButton = document.getElementById('autoRefreshToggleButton');
@@ -161,6 +170,7 @@
 
         elements.detailModal = document.getElementById('detailModal');
         elements.detailCancelButton = document.getElementById('detailCancelButton');
+        elements.detailDeleteButton = document.getElementById('detailDeleteButton');
         elements.detailPrefillButton = document.getElementById('detailPrefillButton');
         elements.detailStatusPill = document.getElementById('detailStatusPill');
         elements.detailContent = document.getElementById('detailContent');
@@ -405,6 +415,10 @@
         return String(state.pendingReviewCancelId || '').trim();
     }
 
+    function getPendingReviewDeleteKey() {
+        return String(state.pendingReviewDeleteId || '').trim();
+    }
+
     function getReviewRecordById(reviewId) {
         const normalizedId = String(reviewId || '').trim();
         if (!normalizedId) {
@@ -494,7 +508,7 @@
         const actionLabel = getCancelActionLabel(record);
         const actionText = actionLabel === '停止' ? '停止任务' : '取消任务';
         const isCanceling = state.cancelingReviewCancelId === reviewId;
-        elements.reviewCancelConfirmText.textContent = `确认${actionText} #${reviewId}？`;
+        elements.reviewCancelConfirmText.textContent = `确认${actionText}？`;
         elements.reviewCancelConfirmButton.disabled = isCanceling;
         elements.reviewCancelConfirmButton.textContent = isCanceling ? `${actionLabel}中...` : '确认';
 
@@ -536,6 +550,7 @@
             return;
         }
 
+        closeReviewDeletePopover();
         closeSettingsDeletePopover();
         state.pendingReviewCancelId = normalizedId;
         state.pendingReviewCancelSource = normalizedSource;
@@ -561,6 +576,153 @@
             });
             if (elements.detailCancelButton) {
                 elements.detailCancelButton.classList.remove('is-active');
+            }
+        }
+    }
+
+    function getReviewDeleteTrigger(reviewId, source) {
+        const normalizedId = String(reviewId || '').trim();
+        if (!normalizedId) {
+            return null;
+        }
+
+        if (source === 'detail') {
+            if (!elements.detailDeleteButton || elements.detailDeleteButton.hidden || elements.detailDeleteButton.disabled) {
+                return null;
+            }
+            if (!state.openDetailRecord || String(state.openDetailRecord.id) !== normalizedId) {
+                return null;
+            }
+            return elements.detailDeleteButton;
+        }
+
+        return Array.from(document.querySelectorAll('[data-delete-review-id]')).find(function(button) {
+            return String(button.getAttribute('data-delete-review-id') || '').trim() === normalizedId;
+        }) || null;
+    }
+
+    function hideReviewDeletePopover() {
+        if (!elements.reviewDeletePopover) {
+            return;
+        }
+
+        elements.reviewDeletePopover.hidden = true;
+        elements.reviewDeletePopover.style.removeProperty('top');
+        elements.reviewDeletePopover.style.removeProperty('left');
+        elements.reviewDeletePopover.style.removeProperty('--popover-arrow-left');
+        elements.reviewDeletePopover.dataset.placement = 'bottom';
+    }
+
+    function syncReviewDeleteTriggerState() {
+        document.querySelectorAll('[data-delete-review-id]').forEach(function(button) {
+            button.classList.remove('is-active');
+        });
+        if (elements.detailDeleteButton) {
+            elements.detailDeleteButton.classList.remove('is-active');
+        }
+
+        const trigger = getReviewDeleteTrigger(state.pendingReviewDeleteId, state.pendingReviewDeleteSource);
+        if (trigger) {
+            trigger.classList.add('is-active');
+        }
+    }
+
+    function syncReviewDeletePopover() {
+        syncReviewDeleteTriggerState();
+
+        if (!elements.reviewDeletePopover || !elements.reviewDeleteConfirmButton || !elements.reviewDeleteConfirmText) {
+            return;
+        }
+
+        const reviewId = getPendingReviewDeleteKey();
+        if (!reviewId) {
+            hideReviewDeletePopover();
+            return;
+        }
+
+        const trigger = getReviewDeleteTrigger(reviewId, state.pendingReviewDeleteSource);
+        const record = getReviewRecordById(reviewId);
+        if (!trigger || !record) {
+            state.pendingReviewDeleteId = '';
+            state.pendingReviewDeleteSource = '';
+            state.deletingReviewDeleteId = '';
+            syncReviewDeleteTriggerState();
+            hideReviewDeletePopover();
+            return;
+        }
+
+        const isDeleting = state.deletingReviewDeleteId === reviewId;
+        const isRunning = isPendingReview(record) && ['running', 'canceling'].includes(String(record.runtime_state || ''));
+        elements.reviewDeleteConfirmText.textContent = isRunning
+            ? '确认删除任务？运行中的任务会先停止再删除。'
+            : '确认删除任务？';
+        elements.reviewDeleteConfirmButton.disabled = isDeleting;
+        elements.reviewDeleteConfirmButton.textContent = isDeleting ? '删除中...' : '确认';
+
+        elements.reviewDeletePopover.hidden = false;
+
+        const triggerRect = trigger.getBoundingClientRect();
+        const popoverRect = elements.reviewDeletePopover.getBoundingClientRect();
+        const viewportPadding = 12;
+        const offset = 10;
+        const canPlaceBottom = triggerRect.bottom + offset + popoverRect.height <= window.innerHeight - viewportPadding;
+        const shouldPlaceBottom = canPlaceBottom || triggerRect.top < popoverRect.height + viewportPadding + offset;
+        const top = shouldPlaceBottom
+            ? Math.min(window.innerHeight - popoverRect.height - viewportPadding, triggerRect.bottom + offset)
+            : Math.max(viewportPadding, triggerRect.top - popoverRect.height - offset);
+        const left = Math.min(
+            window.innerWidth - popoverRect.width - viewportPadding,
+            Math.max(viewportPadding, triggerRect.left + ((triggerRect.width - popoverRect.width) / 2))
+        );
+        const arrowLeft = Math.min(
+            popoverRect.width - 18,
+            Math.max(18, triggerRect.left + (triggerRect.width / 2) - left)
+        );
+
+        elements.reviewDeletePopover.dataset.placement = shouldPlaceBottom ? 'bottom' : 'top';
+        elements.reviewDeletePopover.style.top = `${top}px`;
+        elements.reviewDeletePopover.style.left = `${left}px`;
+        elements.reviewDeletePopover.style.setProperty('--popover-arrow-left', `${arrowLeft}px`);
+    }
+
+    function openReviewDeletePopover(reviewId, source) {
+        const normalizedId = String(reviewId || '').trim();
+        const normalizedSource = source === 'detail' ? 'detail' : 'table';
+        if (!normalizedId || state.deletingReviewDeleteId) {
+            return;
+        }
+
+        if (state.pendingReviewDeleteId === normalizedId && state.pendingReviewDeleteSource === normalizedSource) {
+            closeReviewDeletePopover();
+            return;
+        }
+
+        closeReviewCancelPopover();
+        closeSettingsDeletePopover();
+        state.pendingReviewDeleteId = normalizedId;
+        state.pendingReviewDeleteSource = normalizedSource;
+        syncReviewDeletePopover();
+    }
+
+    function closeReviewDeletePopover(shouldSyncTriggers) {
+        if (!getPendingReviewDeleteKey() && !state.deletingReviewDeleteId) {
+            return;
+        }
+        if (state.deletingReviewDeleteId) {
+            return;
+        }
+
+        state.pendingReviewDeleteId = '';
+        state.pendingReviewDeleteSource = '';
+        hideReviewDeletePopover();
+        if (shouldSyncTriggers !== false) {
+            syncReviewDeleteTriggerState();
+        } else {
+            document.querySelectorAll('[data-delete-review-id]').forEach(function(button) {
+                button.classList.remove('is-active');
+            });
+            if (elements.detailDeleteButton) {
+                elements.detailDeleteButton.classList.remove('is-active');
             }
         }
     }
@@ -671,6 +833,7 @@
         }
 
         closeReviewCancelPopover();
+        closeReviewDeletePopover();
         state.pendingSettingsDeleteKind = normalizedKind;
         state.pendingSettingsDeleteId = normalizedId;
         syncSettingsDeletePopover();
@@ -1014,32 +1177,143 @@
         showToast(`模型列表已更新，新增 ${addedCount} 个，移除 ${removedCount} 个。`, 'success');
     }
 
-    function formatJson(value) {
-        return JSON.stringify(value || {}, null, 2);
+    function createAgentExtraEnvRow(key, value) {
+        const row = document.createElement('div');
+        row.className = 'settings-env-row';
+        row.setAttribute('data-agent-extra-env-row', '');
+
+        const keyInput = document.createElement('input');
+        keyInput.type = 'text';
+        keyInput.placeholder = 'Key，例如：HTTP_PROXY';
+        keyInput.value = String(key || '');
+        keyInput.setAttribute('data-agent-extra-env-key', '');
+
+        const valueInput = document.createElement('input');
+        valueInput.type = 'text';
+        valueInput.placeholder = 'Value，例如：http://127.0.0.1:7890';
+        valueInput.value = String(value || '');
+        valueInput.setAttribute('data-agent-extra-env-value', '');
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'table-action-button table-action-button-danger settings-env-remove-button';
+        removeButton.textContent = '删除';
+        removeButton.setAttribute('data-agent-extra-env-remove', '');
+
+        row.appendChild(keyInput);
+        row.appendChild(valueInput);
+        row.appendChild(removeButton);
+        return row;
     }
 
-    function parseJsonObject(text, fieldName) {
-        const source = String(text || '').trim();
-        if (!source) {
+    function syncAgentExtraEnvEmptyState() {
+        if (!elements.agentExtraEnvList) {
+            return;
+        }
+
+        const hasRows = Boolean(elements.agentExtraEnvList.querySelector('[data-agent-extra-env-row]'));
+        const emptyNode = elements.agentExtraEnvList.querySelector('[data-agent-extra-env-empty]');
+        if (hasRows) {
+            if (emptyNode) {
+                emptyNode.remove();
+            }
+            return;
+        }
+
+        if (emptyNode) {
+            return;
+        }
+
+        const placeholder = document.createElement('div');
+        placeholder.className = 'settings-env-empty';
+        placeholder.setAttribute('data-agent-extra-env-empty', '');
+        placeholder.textContent = '暂未设置额外环境变量';
+        elements.agentExtraEnvList.appendChild(placeholder);
+    }
+
+    function addAgentExtraEnvRow(key, value, options) {
+        if (!elements.agentExtraEnvList) {
+            return null;
+        }
+
+        const emptyNode = elements.agentExtraEnvList.querySelector('[data-agent-extra-env-empty]');
+        if (emptyNode) {
+            emptyNode.remove();
+        }
+
+        const row = createAgentExtraEnvRow(key, value);
+        elements.agentExtraEnvList.appendChild(row);
+        if (options && options.focusKey) {
+            const keyInput = row.querySelector('[data-agent-extra-env-key]');
+            if (keyInput) {
+                keyInput.focus();
+            }
+        }
+        return row;
+    }
+
+    function renderAgentExtraEnvEditor(extraEnv) {
+        if (!elements.agentExtraEnvList) {
+            return;
+        }
+
+        elements.agentExtraEnvList.innerHTML = '';
+        Object.entries(extraEnv || {}).forEach(function(entry) {
+            addAgentExtraEnvRow(entry[0], entry[1]);
+        });
+        syncAgentExtraEnvEmptyState();
+    }
+
+    function clearAgentExtraEnvValidation() {
+        if (!elements.agentExtraEnvList) {
+            return;
+        }
+
+        elements.agentExtraEnvList.querySelectorAll('[data-agent-extra-env-key], [data-agent-extra-env-value]').forEach(function(node) {
+            clearFieldInvalid(node);
+        });
+    }
+
+    function collectAgentExtraEnvObject() {
+        if (!elements.agentExtraEnvList) {
             return {};
         }
 
-        let parsed;
-        try {
-            parsed = JSON.parse(source);
-        } catch (error) {
-            throw new Error(`${fieldName} must be a valid JSON object.`);
+        const extraEnv = {};
+        const seenKeys = new Set();
+        let firstInvalidNode = null;
+
+        elements.agentExtraEnvList.querySelectorAll('[data-agent-extra-env-row]').forEach(function(row) {
+            const keyInput = row.querySelector('[data-agent-extra-env-key]');
+            const valueInput = row.querySelector('[data-agent-extra-env-value]');
+            const key = String(keyInput && keyInput.value || '').trim();
+            const value = String(valueInput && valueInput.value || '');
+
+            clearFieldInvalid(keyInput);
+            clearFieldInvalid(valueInput);
+
+            if (!key && !value) {
+                return;
+            }
+
+            if (!key || seenKeys.has(key)) {
+                markFieldInvalid(keyInput);
+                if (!firstInvalidNode) {
+                    firstInvalidNode = keyInput;
+                }
+                return;
+            }
+
+            seenKeys.add(key);
+            extraEnv[key] = value;
+        });
+
+        if (firstInvalidNode) {
+            firstInvalidNode.focus();
+            throw new Error('额外环境变量的 Key 不能为空且不能重复。');
         }
 
-        if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-            throw new Error(`${fieldName} must be a JSON object.`);
-        }
-
-        return Object.fromEntries(
-            Object.entries(parsed).map(function(entry) {
-                return [String(entry[0]), String(entry[1])];
-            })
-        );
+        return extraEnv;
     }
 
     function appendOption(select, value, label, options) {
@@ -1447,11 +1721,18 @@
             elements.agentReviewCommandInput,
             elements.agentDefaultModelSelect,
             elements.agentModelsTextarea,
-            elements.agentExtraEnvTextarea,
+            elements.agentAddEnvRowButton,
             elements.agentSaveButton
         ].forEach(function(node) {
-            node.disabled = disabled;
+            if (node) {
+                node.disabled = disabled;
+            }
         });
+        if (elements.agentExtraEnvList) {
+            elements.agentExtraEnvList.querySelectorAll('input, button').forEach(function(node) {
+                node.disabled = disabled;
+            });
+        }
         syncAgentModelFetchButtonState(disabled);
     }
 
@@ -1513,6 +1794,7 @@
             elements.agentListModelsCommandInput,
             elements.agentReviewCommandInput
         ]);
+        clearAgentExtraEnvValidation();
     }
 
     function getAgentModelPreviewRequestId() {
@@ -1739,7 +2021,7 @@
             elements.agentListModelsCommandInput.value = '';
             elements.agentReviewCommandInput.value = '';
             elements.agentModelsTextarea.value = '';
-            elements.agentExtraEnvTextarea.value = '{}';
+            renderAgentExtraEnvEditor({});
             renderAgentDefaultModelOptions([], '');
             elements.agentSaveButton.textContent = '保存';
             elements.agentRefreshModelsButton.textContent = '拉取模型';
@@ -1758,7 +2040,7 @@
         elements.agentListModelsCommandInput.value = config.list_models_command || '';
         elements.agentReviewCommandInput.value = config.review_command || '';
         elements.agentModelsTextarea.value = joinLineList(modelIds);
-        elements.agentExtraEnvTextarea.value = formatJson(config.extra_env || {});
+        renderAgentExtraEnvEditor(config.extra_env || {});
         renderAgentDefaultModelOptions(modelIds, selectedDefaultModel);
         clearAgentSettingsValidation();
         setAgentEditorDisabled(false);
@@ -2044,12 +2326,14 @@
         const canCancel = isReviewCancelable(record);
         const cancelLabel = getCancelActionLabel(record);
         const cancelDisabled = record && record.runtime_state === 'canceling';
+        const deleteDisabled = String(state.deletingReviewDeleteId || '') === String(record.id);
 
         return `
             <button type="button" class="table-action-button table-action-button-edit" data-view-review-id="${record.id}">详情</button>
             ${canCancel
                 ? `<button type="button" class="table-action-button table-action-button-danger" data-cancel-review-id="${record.id}"${cancelDisabled ? ' disabled' : ''}>${escapeHtml(cancelLabel)}</button>`
                 : `<button type="button" class="table-action-button table-action-button-danger" data-prefill-review-id="${record.id}">重试</button>`}
+            <button type="button" class="table-action-button table-action-button-danger" data-delete-review-id="${record.id}"${deleteDisabled ? ' disabled' : ''}>删除</button>
         `;
     }
 
@@ -2185,6 +2469,8 @@
 
         if (!records.length) {
             elements.recordsTableBody.innerHTML = '<tr><td colspan="7" class="empty-row">暂无检视记录。</td></tr>';
+            syncReviewCancelPopover();
+            syncReviewDeletePopover();
             return;
         }
 
@@ -2234,6 +2520,7 @@
             `;
         }).join('');
         syncReviewCancelPopover();
+        syncReviewDeletePopover();
     }
 
     async function refreshReviews() {
@@ -2245,10 +2532,12 @@
         renderRecords(payload.records || []);
         renderPagination(payload.pagination || {});
         syncReviewCancelPopover();
+        syncReviewDeletePopover();
 
         if (state.openDetailId != null && !elements.detailModal.hidden) {
             await loadDetail(state.openDetailId, true);
             syncReviewCancelPopover();
+            syncReviewDeletePopover();
         }
     }
 
@@ -2287,6 +2576,7 @@
 
     function closeDetailModal() {
         closeReviewCancelPopover();
+        closeReviewDeletePopover();
         state.openDetailId = null;
         state.openDetailRecord = null;
         elements.detailContent.hidden = true;
@@ -2295,12 +2585,18 @@
             elements.detailCancelButton.disabled = false;
             elements.detailCancelButton.textContent = '取消任务';
         }
+        if (elements.detailDeleteButton) {
+            elements.detailDeleteButton.hidden = true;
+            elements.detailDeleteButton.disabled = false;
+            elements.detailDeleteButton.textContent = '删除任务';
+        }
         closeModal(elements.detailModal);
     }
 
     function openAgentSettingsModal(agentId) {
         const normalizedAgentId = String(agentId || '').trim();
         closeReviewCancelPopover();
+        closeReviewDeletePopover();
         closeSettingsDeletePopover();
         closeAgentModelListViewer();
         state.isAgentSettingsModalOpen = true;
@@ -2324,6 +2620,7 @@
     function openHubSettingsModal(hubId) {
         const normalizedHubId = String(hubId || '').trim();
         closeReviewCancelPopover();
+        closeReviewDeletePopover();
         closeSettingsDeletePopover();
         closeAgentModelListViewer();
         state.isHubSettingsModalOpen = true;
@@ -2346,6 +2643,7 @@
     function renderDetail(detail) {
         const mrUrl = String(detail.mr_url || '').trim();
         const canCancel = isReviewCancelable(detail);
+        const isDeleting = String(state.deletingReviewDeleteId || '') === String(detail.id);
         state.openDetailId = detail.id;
         state.openDetailRecord = detail;
         elements.detailStatusPill.className = `status-pill ${getStatusClass(detail)}`;
@@ -2355,6 +2653,11 @@
             elements.detailCancelButton.hidden = !canCancel;
             elements.detailCancelButton.disabled = detail.runtime_state === 'canceling';
             elements.detailCancelButton.textContent = getCancelActionLabel(detail);
+        }
+        if (elements.detailDeleteButton) {
+            elements.detailDeleteButton.hidden = false;
+            elements.detailDeleteButton.disabled = isDeleting;
+            elements.detailDeleteButton.textContent = '删除任务';
         }
 
         elements.detailMrUrl.textContent = mrUrl || '-';
@@ -2385,6 +2688,7 @@
 
         openDetailModal();
         syncReviewCancelPopover();
+        syncReviewDeletePopover();
     }
 
     async function loadDetail(reviewId, silent) {
@@ -2436,6 +2740,42 @@
         }
     }
 
+    async function deleteReview(reviewId) {
+        return requestJson(`/api/reviews/${reviewId}`, {
+            method: 'DELETE'
+        });
+    }
+
+    async function confirmReviewDelete() {
+        const reviewId = getPendingReviewDeleteKey();
+        if (!reviewId) {
+            return;
+        }
+
+        state.deletingReviewDeleteId = reviewId;
+        syncReviewDeletePopover();
+
+        try {
+            const payload = await deleteReview(Number(reviewId));
+            state.pendingReviewDeleteId = '';
+            state.pendingReviewDeleteSource = '';
+            state.deletingReviewDeleteId = '';
+            hideReviewDeletePopover();
+            syncReviewDeleteTriggerState();
+
+            if (state.openDetailRecord && String(state.openDetailRecord.id) === String(reviewId)) {
+                closeDetailModal();
+            }
+
+            await refreshReviews();
+            showToast(payload.stopped ? '任务已停止并删除。' : '任务已删除。', 'success');
+        } catch (error) {
+            state.deletingReviewDeleteId = '';
+            syncReviewDeletePopover();
+            throw error;
+        }
+    }
+
     function prefillReviewForm(record) {
         if (!record || !record.mr_url) {
             showToast('无法回填 MR 地址。', 'error');
@@ -2443,6 +2783,7 @@
         }
 
         closeReviewCancelPopover();
+        closeReviewDeletePopover();
         elements.mrUrlInput.value = record.mr_url;
 
         if (record.hub_id && Array.from(elements.hubSelect.options).some(function(option) { return option.value === record.hub_id; })) {
@@ -2545,7 +2886,7 @@
             default_model_id: models.includes(String(elements.agentDefaultModelSelect.value || '').trim())
                 ? String(elements.agentDefaultModelSelect.value || '').trim()
                 : '',
-            extra_env: parseJsonObject(elements.agentExtraEnvTextarea.value, 'extra_env')
+            extra_env: collectAgentExtraEnvObject()
         };
     }
 
@@ -2554,7 +2895,7 @@
             agent_id: getAgentModelPreviewRequestId(),
             list_models_command: String(elements.agentListModelsCommandInput.value || '').trim(),
             review_command: String(elements.agentReviewCommandInput.value || '').trim(),
-            extra_env: parseJsonObject(elements.agentExtraEnvTextarea.value, 'extra_env')
+            extra_env: collectAgentExtraEnvObject()
         };
     }
 
@@ -3082,23 +3423,32 @@
             if (event.target.closest('#reviewCancelPopover')) {
                 return;
             }
+            if (event.target.closest('#reviewDeletePopover')) {
+                return;
+            }
             if (event.target.closest('[data-delete-agent-id], [data-delete-hub-id]')) {
                 return;
             }
             if (event.target.closest('[data-cancel-review-id], #detailCancelButton')) {
                 return;
             }
+            if (event.target.closest('[data-delete-review-id], #detailDeleteButton')) {
+                return;
+            }
             closeReviewCancelPopover();
+            closeReviewDeletePopover();
             closeSettingsDeletePopover();
         });
 
         window.addEventListener('resize', function() {
             closeReviewCancelPopover(false);
+            closeReviewDeletePopover(false);
             closeSettingsDeletePopover(false);
         });
 
         window.addEventListener('scroll', function() {
             closeReviewCancelPopover(false);
+            closeReviewDeletePopover(false);
             closeSettingsDeletePopover(false);
         }, true);
 
@@ -3314,6 +3664,13 @@
                 return;
             }
 
+            const deleteButton = event.target.closest('[data-delete-review-id]');
+            if (deleteButton) {
+                const reviewId = Number(deleteButton.getAttribute('data-delete-review-id'));
+                openReviewDeletePopover(reviewId, 'table');
+                return;
+            }
+
             const prefillButton = event.target.closest('[data-prefill-review-id]');
             if (prefillButton) {
                 const reviewId = Number(prefillButton.getAttribute('data-prefill-review-id'));
@@ -3337,6 +3694,15 @@
                     return;
                 }
                 openReviewCancelPopover(state.openDetailRecord.id, 'detail');
+            });
+        }
+
+        if (elements.detailDeleteButton) {
+            elements.detailDeleteButton.addEventListener('click', function() {
+                if (!state.openDetailRecord) {
+                    return;
+                }
+                openReviewDeletePopover(state.openDetailRecord.id, 'detail');
             });
         }
 
@@ -3409,12 +3775,32 @@
             });
         }
 
+        if (elements.reviewDeleteCancelButton) {
+            elements.reviewDeleteCancelButton.addEventListener('click', function(event) {
+                event.preventDefault();
+                closeReviewDeletePopover();
+            });
+        }
+
+        if (elements.reviewDeleteConfirmButton) {
+            elements.reviewDeleteConfirmButton.addEventListener('click', function(event) {
+                event.preventDefault();
+                confirmReviewDelete().catch(function(error) {
+                    showToast(error.message || String(error), 'error');
+                });
+            });
+        }
+
         document.addEventListener('keydown', function(event) {
             if (event.key !== 'Escape') {
                 return;
             }
             if (getPendingReviewCancelKey()) {
                 closeReviewCancelPopover();
+                return;
+            }
+            if (getPendingReviewDeleteKey()) {
+                closeReviewDeletePopover();
                 return;
             }
             if (state.isAgentModelListModalOpen) {
@@ -3553,6 +3939,35 @@
                 }
             });
         });
+
+        if (elements.agentAddEnvRowButton) {
+            elements.agentAddEnvRowButton.addEventListener('click', function() {
+                addAgentExtraEnvRow('', '', { focusKey: true });
+            });
+        }
+
+        if (elements.agentExtraEnvList) {
+            elements.agentExtraEnvList.addEventListener('input', function(event) {
+                const input = event.target.closest('[data-agent-extra-env-key], [data-agent-extra-env-value]');
+                if (!input) {
+                    return;
+                }
+                clearFieldInvalid(input);
+            });
+
+            elements.agentExtraEnvList.addEventListener('click', function(event) {
+                const removeButton = event.target.closest('[data-agent-extra-env-remove]');
+                if (!removeButton) {
+                    return;
+                }
+
+                const row = removeButton.closest('[data-agent-extra-env-row]');
+                if (row) {
+                    row.remove();
+                    syncAgentExtraEnvEmptyState();
+                }
+            });
+        }
 
         elements.hubSettingsId.addEventListener('input', function() {
             clearFieldInvalid(elements.hubSettingsId);

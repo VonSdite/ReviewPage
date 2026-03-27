@@ -37,6 +37,7 @@ class WebController:
         self._app.route("/api/reviews", methods=["GET"])(self.list_reviews)
         self._app.route("/api/reviews", methods=["POST"])(self.create_review)
         self._app.route("/api/reviews/<int:review_id>", methods=["GET"])(self.get_review_detail)
+        self._app.route("/api/reviews/<int:review_id>", methods=["DELETE"])(self.delete_review)
         self._app.route("/api/reviews/<int:review_id>/cancel", methods=["POST"])(self.cancel_review)
 
     def index(self) -> str:
@@ -187,6 +188,19 @@ class WebController:
             return jsonify(detail)
         except Exception as exc:
             self._logger.exception("Failed to get review detail")
+            return jsonify({"error": str(exc)}), 500
+
+    def delete_review(self, review_id: int) -> Response:
+        try:
+            payload = self._review_service.delete_review(review_id)
+            self._queue_worker.wake_up()
+            return jsonify(payload)
+        except ValueError as exc:
+            message = str(exc)
+            status_code = 404 if "not found" in message.lower() else 400
+            return jsonify({"error": message}), status_code
+        except Exception as exc:
+            self._logger.exception("Failed to delete review")
             return jsonify({"error": str(exc)}), 500
 
     def cancel_review(self, review_id: int) -> Response:

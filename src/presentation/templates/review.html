@@ -1,7 +1,7 @@
 {% extends "base_page.html" %}
 
 {% block page_title %}MR 检视{% endblock %}
-{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260327-24">{% endblock %}
+{% block page_css %}<link rel="stylesheet" href="/static/css/review.css?v=20260327-28">{% endblock %}
 {% block body_class %}review-page{% endblock %}
 
 {% block body %}
@@ -341,9 +341,12 @@
                             <textarea id="agentModelsTextarea" rows="10" placeholder="可手动填写模型 ID，每行一个；也可点击右侧“拉取模型”自动获取"></textarea>
                         </div>
 
-                        <div class="form-field settings-form-span-2">
-                            <label for="agentExtraEnvTextarea">额外环境变量</label>
-                            <textarea id="agentExtraEnvTextarea" rows="7" placeholder='可选，填写 JSON 对象，例如：{"HTTP_PROXY":"http://127.0.0.1:7890"}'></textarea>
+                        <div class="form-field settings-form-span-2 settings-env-field" id="agentExtraEnvField">
+                            <div class="settings-env-field-head">
+                                <label>额外环境变量</label>
+                                <button type="button" class="field-link-button" id="agentAddEnvRowButton">新增变量</button>
+                            </div>
+                            <div class="settings-env-list" id="agentExtraEnvList" aria-live="polite"></div>
                         </div>
                     </div>
 
@@ -539,6 +542,7 @@
                 </div>
                 <div class="detail-modal-actions">
                     <button type="button" class="secondary-button" id="detailCancelButton" hidden>取消任务</button>
+                    <button type="button" class="secondary-button" id="detailDeleteButton" hidden>删除任务</button>
                     <button type="button" class="secondary-button" id="detailPrefillButton">重试</button>
                     <button
                         type="button"
@@ -635,6 +639,14 @@
     </div>
 </div>
 
+<div class="inline-confirm-popover floating-review-delete-popover" id="reviewDeletePopover" data-placement="bottom" hidden>
+    <div class="inline-confirm-text" id="reviewDeleteConfirmText">确认删除任务？</div>
+    <div class="inline-confirm-actions">
+        <button type="button" class="table-action-button inline-confirm-action" id="reviewDeleteCancelButton">取消</button>
+        <button type="button" class="table-action-button table-action-button-danger inline-confirm-action" id="reviewDeleteConfirmButton">确认</button>
+    </div>
+</div>
+
 <div class="inline-confirm-popover floating-delete-popover" id="settingsDeletePopover" data-placement="bottom" hidden>
     <div class="inline-confirm-text" id="settingsDeleteConfirmText">删除？</div>
     <div class="inline-confirm-actions">
@@ -647,6 +659,6 @@
 {% endblock %}
 
 {% block page_scripts %}
-<script src="/static/js/review.js?v=20260327-17"></script>
+<script src="/static/js/review.js?v=20260327-19"></script>
 
 {% endblock %}

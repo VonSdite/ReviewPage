@@ -329,6 +329,40 @@ class ReviewRepository:
             ).fetchone()
             return dict(row) if row is not None else None
 
+    def delete_review(self, review_id: int) -> bool:
+        with self._connection_factory() as conn:
+            row = conn.execute(
+                """
+                SELECT status, runtime_state
+                FROM review_records
+                WHERE id = ?
+                """,
+                (review_id,),
+            ).fetchone()
+            if row is None:
+                return False
+
+            status = str(row["status"] or "")
+            runtime_state = str(row["runtime_state"] or "")
+            if status == "pending" and runtime_state in {"running", "canceling"}:
+                return False
+
+            conn.execute(
+                """
+                DELETE FROM review_logs
+                WHERE review_id = ?
+                """,
+                (review_id,),
+            )
+            cursor = conn.execute(
+                """
+                DELETE FROM review_records
+                WHERE id = ?
+                """,
+                (review_id,),
+            )
+            return int(cursor.rowcount or 0) > 0
+
     def rename_agent(self, agent_id: str, new_agent_id: str) -> int:
         now = _utc_now()
         with self._connection_factory() as conn:
