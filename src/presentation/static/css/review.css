@@ -1227,7 +1227,8 @@
 }
 
 .table-action-button-edit,
-#settingsDeleteCancelButton {
+#settingsDeleteCancelButton,
+#reviewCancelCancelButton {
     color: var(--primary);
     background: #edf4fc;
     border-color: #d6e4f1;
@@ -1236,7 +1237,9 @@
 .table-action-button-edit:hover,
 .table-action-button-edit:focus-visible,
 #settingsDeleteCancelButton:hover,
-#settingsDeleteCancelButton:focus-visible {
+#settingsDeleteCancelButton:focus-visible,
+#reviewCancelCancelButton:hover,
+#reviewCancelCancelButton:focus-visible {
     color: #ffffff;
     background: var(--primary);
     border-color: var(--primary);
@@ -1617,7 +1620,8 @@
     box-shadow: var(--shadow-soft);
 }
 
-.floating-delete-popover[hidden] {
+.floating-delete-popover[hidden],
+.floating-review-cancel-popover[hidden] {
     display: none !important;
 }
 
@@ -1759,7 +1763,8 @@
 }
 
 :root[data-theme="dark"] .table-action-button-edit,
-:root[data-theme="dark"] #settingsDeleteCancelButton {
+:root[data-theme="dark"] #settingsDeleteCancelButton,
+:root[data-theme="dark"] #reviewCancelCancelButton {
     background: #1b2230;
     border-color: #30363d;
     color: var(--primary);
@@ -1768,7 +1773,9 @@
 :root[data-theme="dark"] .table-action-button-edit:hover,
 :root[data-theme="dark"] .table-action-button-edit:focus-visible,
 :root[data-theme="dark"] #settingsDeleteCancelButton:hover,
-:root[data-theme="dark"] #settingsDeleteCancelButton:focus-visible {
+:root[data-theme="dark"] #settingsDeleteCancelButton:focus-visible,
+:root[data-theme="dark"] #reviewCancelCancelButton:hover,
+:root[data-theme="dark"] #reviewCancelCancelButton:focus-visible {
     background: var(--primary);
     border-color: var(--primary);
     color: #ffffff;

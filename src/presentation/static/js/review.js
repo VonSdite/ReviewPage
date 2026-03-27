@@ -38,6 +38,9 @@
         isHubSettingsModalOpen: false,
         isAgentFetchModelsModalOpen: false,
         isAgentModelListModalOpen: false,
+        pendingReviewCancelId: '',
+        pendingReviewCancelSource: '',
+        cancelingReviewCancelId: '',
         pendingSettingsDeleteKind: '',
         pendingSettingsDeleteId: '',
         deletingSettingsDeleteKey: '',
@@ -139,6 +142,10 @@
         elements.settingsDeleteConfirmText = document.getElementById('settingsDeleteConfirmText');
         elements.settingsDeleteCancelButton = document.getElementById('settingsDeleteCancelButton');
         elements.settingsDeleteConfirmButton = document.getElementById('settingsDeleteConfirmButton');
+        elements.reviewCancelPopover = document.getElementById('reviewCancelPopover');
+        elements.reviewCancelConfirmText = document.getElementById('reviewCancelConfirmText');
+        elements.reviewCancelCancelButton = document.getElementById('reviewCancelCancelButton');
+        elements.reviewCancelConfirmButton = document.getElementById('reviewCancelConfirmButton');
 
         elements.queueRefreshButton = document.getElementById('queueRefreshButton');
         elements.autoRefreshToggleButton = document.getElementById('autoRefreshToggleButton');
@@ -394,6 +401,170 @@
         return getSettingsDeleteKey(state.pendingSettingsDeleteKind, state.pendingSettingsDeleteId);
     }
 
+    function getPendingReviewCancelKey() {
+        return String(state.pendingReviewCancelId || '').trim();
+    }
+
+    function getReviewRecordById(reviewId) {
+        const normalizedId = String(reviewId || '').trim();
+        if (!normalizedId) {
+            return null;
+        }
+
+        if (state.openDetailRecord && String(state.openDetailRecord.id) === normalizedId) {
+            return state.openDetailRecord;
+        }
+
+        return state.records.find(function(record) {
+            return String(record.id) === normalizedId;
+        }) || null;
+    }
+
+    function getReviewCancelTrigger(reviewId, source) {
+        const normalizedId = String(reviewId || '').trim();
+        if (!normalizedId) {
+            return null;
+        }
+
+        if (source === 'detail') {
+            if (!elements.detailCancelButton || elements.detailCancelButton.hidden || elements.detailCancelButton.disabled) {
+                return null;
+            }
+            if (!state.openDetailRecord || String(state.openDetailRecord.id) !== normalizedId) {
+                return null;
+            }
+            return elements.detailCancelButton;
+        }
+
+        return Array.from(document.querySelectorAll('[data-cancel-review-id]')).find(function(button) {
+            return String(button.getAttribute('data-cancel-review-id') || '').trim() === normalizedId;
+        }) || null;
+    }
+
+    function hideReviewCancelPopover() {
+        if (!elements.reviewCancelPopover) {
+            return;
+        }
+
+        elements.reviewCancelPopover.hidden = true;
+        elements.reviewCancelPopover.style.removeProperty('top');
+        elements.reviewCancelPopover.style.removeProperty('left');
+        elements.reviewCancelPopover.style.removeProperty('--popover-arrow-left');
+        elements.reviewCancelPopover.dataset.placement = 'bottom';
+    }
+
+    function syncReviewCancelTriggerState() {
+        document.querySelectorAll('[data-cancel-review-id]').forEach(function(button) {
+            button.classList.remove('is-active');
+        });
+        if (elements.detailCancelButton) {
+            elements.detailCancelButton.classList.remove('is-active');
+        }
+
+        const trigger = getReviewCancelTrigger(state.pendingReviewCancelId, state.pendingReviewCancelSource);
+        if (trigger) {
+            trigger.classList.add('is-active');
+        }
+    }
+
+    function syncReviewCancelPopover() {
+        syncReviewCancelTriggerState();
+
+        if (!elements.reviewCancelPopover || !elements.reviewCancelConfirmButton || !elements.reviewCancelConfirmText) {
+            return;
+        }
+
+        const reviewId = getPendingReviewCancelKey();
+        if (!reviewId) {
+            hideReviewCancelPopover();
+            return;
+        }
+
+        const trigger = getReviewCancelTrigger(reviewId, state.pendingReviewCancelSource);
+        const record = getReviewRecordById(reviewId);
+        if (!trigger || !record || !isReviewCancelable(record)) {
+            state.pendingReviewCancelId = '';
+            state.pendingReviewCancelSource = '';
+            state.cancelingReviewCancelId = '';
+            syncReviewCancelTriggerState();
+            hideReviewCancelPopover();
+            return;
+        }
+
+        const actionLabel = getCancelActionLabel(record);
+        const actionText = actionLabel === '停止' ? '停止任务' : '取消任务';
+        const isCanceling = state.cancelingReviewCancelId === reviewId;
+        elements.reviewCancelConfirmText.textContent = `确认${actionText} #${reviewId}？`;
+        elements.reviewCancelConfirmButton.disabled = isCanceling;
+        elements.reviewCancelConfirmButton.textContent = isCanceling ? `${actionLabel}中...` : '确认';
+
+        elements.reviewCancelPopover.hidden = false;
+
+        const triggerRect = trigger.getBoundingClientRect();
+        const popoverRect = elements.reviewCancelPopover.getBoundingClientRect();
+        const viewportPadding = 12;
+        const offset = 10;
+        const canPlaceBottom = triggerRect.bottom + offset + popoverRect.height <= window.innerHeight - viewportPadding;
+        const shouldPlaceBottom = canPlaceBottom || triggerRect.top < popoverRect.height + viewportPadding + offset;
+        const top = shouldPlaceBottom
+            ? Math.min(window.innerHeight - popoverRect.height - viewportPadding, triggerRect.bottom + offset)
+            : Math.max(viewportPadding, triggerRect.top - popoverRect.height - offset);
+        const left = Math.min(
+            window.innerWidth - popoverRect.width - viewportPadding,
+            Math.max(viewportPadding, triggerRect.left + ((triggerRect.width - popoverRect.width) / 2))
+        );
+        const arrowLeft = Math.min(
+            popoverRect.width - 18,
+            Math.max(18, triggerRect.left + (triggerRect.width / 2) - left)
+        );
+
+        elements.reviewCancelPopover.dataset.placement = shouldPlaceBottom ? 'bottom' : 'top';
+        elements.reviewCancelPopover.style.top = `${top}px`;
+        elements.reviewCancelPopover.style.left = `${left}px`;
+        elements.reviewCancelPopover.style.setProperty('--popover-arrow-left', `${arrowLeft}px`);
+    }
+
+    function openReviewCancelPopover(reviewId, source) {
+        const normalizedId = String(reviewId || '').trim();
+        const normalizedSource = source === 'detail' ? 'detail' : 'table';
+        if (!normalizedId || state.cancelingReviewCancelId) {
+            return;
+        }
+
+        if (state.pendingReviewCancelId === normalizedId && state.pendingReviewCancelSource === normalizedSource) {
+            closeReviewCancelPopover();
+            return;
+        }
+
+        closeSettingsDeletePopover();
+        state.pendingReviewCancelId = normalizedId;
+        state.pendingReviewCancelSource = normalizedSource;
+        syncReviewCancelPopover();
+    }
+
+    function closeReviewCancelPopover(shouldSyncTriggers) {
+        if (!getPendingReviewCancelKey() && !state.cancelingReviewCancelId) {
+            return;
+        }
+        if (state.cancelingReviewCancelId) {
+            return;
+        }
+
+        state.pendingReviewCancelId = '';
+        state.pendingReviewCancelSource = '';
+        hideReviewCancelPopover();
+        if (shouldSyncTriggers !== false) {
+            syncReviewCancelTriggerState();
+        } else {
+            document.querySelectorAll('[data-cancel-review-id]').forEach(function(button) {
+                button.classList.remove('is-active');
+            });
+            if (elements.detailCancelButton) {
+                elements.detailCancelButton.classList.remove('is-active');
+            }
+        }
+    }
+
     function getSettingsDeleteTrigger(kind, id) {
         const normalizedId = String(id || '').trim();
         if (!normalizedId) {
@@ -499,6 +670,7 @@
             return;
         }
 
+        closeReviewCancelPopover();
         state.pendingSettingsDeleteKind = normalizedKind;
         state.pendingSettingsDeleteId = normalizedId;
         syncSettingsDeletePopover();
@@ -1793,6 +1965,7 @@
         state.isAgentModelListModalOpen = false;
         closeModal(elements.agentModelListModal);
         resetAgentModelListViewerState();
+        closeReviewCancelPopover(false);
         closeSettingsDeletePopover(false);
 
         const results = await Promise.all([
@@ -2060,6 +2233,7 @@
                 </tr>
             `;
         }).join('');
+        syncReviewCancelPopover();
     }
 
     async function refreshReviews() {
@@ -2070,9 +2244,11 @@
         const payload = await requestJson(`/api/reviews?${params.toString()}`);
         renderRecords(payload.records || []);
         renderPagination(payload.pagination || {});
+        syncReviewCancelPopover();
 
         if (state.openDetailId != null && !elements.detailModal.hidden) {
             await loadDetail(state.openDetailId, true);
+            syncReviewCancelPopover();
         }
     }
 
@@ -2110,6 +2286,7 @@
     }
 
     function closeDetailModal() {
+        closeReviewCancelPopover();
         state.openDetailId = null;
         state.openDetailRecord = null;
         elements.detailContent.hidden = true;
@@ -2123,6 +2300,7 @@
 
     function openAgentSettingsModal(agentId) {
         const normalizedAgentId = String(agentId || '').trim();
+        closeReviewCancelPopover();
         closeSettingsDeletePopover();
         closeAgentModelListViewer();
         state.isAgentSettingsModalOpen = true;
@@ -2145,6 +2323,7 @@
 
     function openHubSettingsModal(hubId) {
         const normalizedHubId = String(hubId || '').trim();
+        closeReviewCancelPopover();
         closeSettingsDeletePopover();
         closeAgentModelListViewer();
         state.isHubSettingsModalOpen = true;
@@ -2205,6 +2384,7 @@
         }).join('\n') || '-';
 
         openDetailModal();
+        syncReviewCancelPopover();
     }
 
     async function loadDetail(reviewId, silent) {
@@ -2233,12 +2413,36 @@
         return payload;
     }
 
+    async function confirmReviewCancel() {
+        const reviewId = getPendingReviewCancelKey();
+        if (!reviewId) {
+            return;
+        }
+
+        state.cancelingReviewCancelId = reviewId;
+        syncReviewCancelPopover();
+
+        try {
+            await cancelReview(Number(reviewId));
+            state.pendingReviewCancelId = '';
+            state.pendingReviewCancelSource = '';
+            state.cancelingReviewCancelId = '';
+            hideReviewCancelPopover();
+            syncReviewCancelTriggerState();
+        } catch (error) {
+            state.cancelingReviewCancelId = '';
+            syncReviewCancelPopover();
+            throw error;
+        }
+    }
+
     function prefillReviewForm(record) {
         if (!record || !record.mr_url) {
             showToast('无法回填 MR 地址。', 'error');
             return;
         }
 
+        closeReviewCancelPopover();
         elements.mrUrlInput.value = record.mr_url;
 
         if (record.hub_id && Array.from(elements.hubSelect.options).some(function(option) { return option.value === record.hub_id; })) {
@@ -2875,17 +3079,26 @@
             if (event.target.closest('#settingsDeletePopover')) {
                 return;
             }
+            if (event.target.closest('#reviewCancelPopover')) {
+                return;
+            }
             if (event.target.closest('[data-delete-agent-id], [data-delete-hub-id]')) {
                 return;
             }
+            if (event.target.closest('[data-cancel-review-id], #detailCancelButton')) {
+                return;
+            }
+            closeReviewCancelPopover();
             closeSettingsDeletePopover();
         });
 
         window.addEventListener('resize', function() {
+            closeReviewCancelPopover(false);
             closeSettingsDeletePopover(false);
         });
 
         window.addEventListener('scroll', function() {
+            closeReviewCancelPopover(false);
             closeSettingsDeletePopover(false);
         }, true);
 
@@ -3097,16 +3310,7 @@
             const cancelButton = event.target.closest('[data-cancel-review-id]');
             if (cancelButton) {
                 const reviewId = Number(cancelButton.getAttribute('data-cancel-review-id'));
-                const record = state.records.find(function(item) {
-                    return Number(item.id) === reviewId;
-                }) || null;
-                runWithBusyButton(cancelButton, getCancelActionLabel(record), function() {
-                    return cancelReview(reviewId);
-                }, {
-                    preserveLabel: true
-                }).catch(function(error) {
-                    showToast(error.message || String(error), 'error');
-                });
+                openReviewCancelPopover(reviewId, 'table');
                 return;
             }
 
@@ -3132,14 +3336,7 @@
                 if (!state.openDetailRecord) {
                     return;
                 }
-
-                runWithBusyButton(elements.detailCancelButton, getCancelActionLabel(state.openDetailRecord), function() {
-                    return cancelReview(state.openDetailRecord.id);
-                }, {
-                    preserveLabel: true
-                }).catch(function(error) {
-                    showToast(error.message || String(error), 'error');
-                });
+                openReviewCancelPopover(state.openDetailRecord.id, 'detail');
             });
         }
 
@@ -3196,8 +3393,28 @@
             });
         }
 
+        if (elements.reviewCancelCancelButton) {
+            elements.reviewCancelCancelButton.addEventListener('click', function(event) {
+                event.preventDefault();
+                closeReviewCancelPopover();
+            });
+        }
+
+        if (elements.reviewCancelConfirmButton) {
+            elements.reviewCancelConfirmButton.addEventListener('click', function(event) {
+                event.preventDefault();
+                confirmReviewCancel().catch(function(error) {
+                    showToast(error.message || String(error), 'error');
+                });
+            });
+        }
+
         document.addEventListener('keydown', function(event) {
             if (event.key !== 'Escape') {
+                return;
+            }
+            if (getPendingReviewCancelKey()) {
+                closeReviewCancelPopover();
                 return;
             }
             if (state.isAgentModelListModalOpen) {
