@@ -91,6 +91,7 @@ class ProcessTestCase(unittest.TestCase):
             ["C:/Users/Von/AppData/Roaming/npm/opencode.CMD", "models"],
         )
         self.assertEqual(mocked_popen.call_args.kwargs["bufsize"], -1)
+        self.assertIs(mocked_popen.call_args.kwargs["stdin"], __import__("subprocess").DEVNULL)
 
     def test_stream_command_hides_windows_console_window(self):
         process = MagicMock()
@@ -112,6 +113,7 @@ class ProcessTestCase(unittest.TestCase):
 
         self.assertTrue(mocked_popen.call_args.kwargs["creationflags"] & 134217728)
         self.assertIs(mocked_popen.call_args.kwargs["startupinfo"], startupinfo)
+        self.assertIs(mocked_popen.call_args.kwargs["stdin"], __import__("subprocess").DEVNULL)
 
     def test_stream_command_strips_terminal_control_sequences(self):
         process = MagicMock()

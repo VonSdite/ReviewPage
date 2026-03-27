@@ -235,6 +235,7 @@ def stream_command(
         process = subprocess.Popen(
             resolved_argv,
             cwd=str(cwd),
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=False,
