@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import os
 import re
 import shutil
 import stat
