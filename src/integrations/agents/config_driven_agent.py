@@ -96,13 +96,25 @@ class ConfigDrivenReviewAgent(ReviewAgent):
         self._ctx.config_manager.update_agent_models(self.agent_id, model_ids)
         return self.get_model_catalog()
 
-    def build_review_command(self, *, model: str, review_url: str, workspace_dir: str) -> ReviewCommandSpec:
+    def build_review_command(
+        self,
+        *,
+        model: str,
+        review_url: str,
+        workspace_dir: str,
+        repo_url: str = "",
+        source_branch: str = "",
+        target_branch: str = "",
+    ) -> ReviewCommandSpec:
         argv = self._build_command_argv(
             self._review_command,
             command_name="review_command",
             model=model,
             review_url=review_url,
             workspace_dir=workspace_dir,
+            repo_url=repo_url,
+            source_branch=source_branch,
+            target_branch=target_branch,
         )
         return ReviewCommandSpec(argv=argv, env=self._build_command_env())
 

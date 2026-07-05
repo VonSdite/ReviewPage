@@ -234,7 +234,7 @@ class _ConfigurableFakeAgent:
     def get_default_model_id(self):
         return self._ctx.config_manager.get_agent_default_model_id(self.agent_id)
 
-    def build_review_command(self, *, model, review_url, workspace_dir):
+    def build_review_command(self, *, model, review_url, workspace_dir, **_metadata):
         return ReviewCommandSpec(argv=["echo", model, review_url, workspace_dir], env={})
 
     def refresh_model_catalog(self):
@@ -603,6 +603,16 @@ class ReviewServiceTestCase(unittest.TestCase):
                     "--prune",
                     "origin",
                     "+refs/heads/feature/review-page:refs/remotes/origin/feature/review-page",
+                ],
+                commands,
+            )
+            self.assertIn(
+                [
+                    "git",
+                    "fetch",
+                    "--prune",
+                    "origin",
+                    "+refs/heads/main:refs/remotes/origin/main",
                 ],
                 commands,
             )

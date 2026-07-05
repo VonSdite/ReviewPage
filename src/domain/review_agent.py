@@ -21,7 +21,16 @@ class ReviewAgent(ABC):
         """主动刷新并持久化当前 Agent 可用模型列表。"""
 
     @abstractmethod
-    def build_review_command(self, *, model: str, review_url: str, workspace_dir: str) -> ReviewCommandSpec:
+    def build_review_command(
+        self,
+        *,
+        model: str,
+        review_url: str,
+        workspace_dir: str,
+        repo_url: str = "",
+        source_branch: str = "",
+        target_branch: str = "",
+    ) -> ReviewCommandSpec:
         """构建单次检视任务命令。"""
 
     def get_default_model_id(self) -> str | None:

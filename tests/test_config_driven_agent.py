@@ -182,6 +182,47 @@ class ConfigDrivenAgentTestCase(unittest.TestCase):
             },
         )
 
+    def test_build_review_command_supports_review_metadata_placeholders(self):
+        agent = ConfigDrivenReviewAgent(
+            _FakeCtx(
+                agent_configs={
+                    "demo-agent": {
+                        "list_models_command": "demo models",
+                        "review_command": (
+                            'demo review --repo "{repo_url}" --source "{source_branch}" '
+                            '--target "{target_branch}" "{workspace_dir}"'
+                        ),
+                        "models": ["configured/model"],
+                    }
+                }
+            ),
+            "demo-agent",
+        )
+
+        command = agent.build_review_command(
+            model="provider/model-a",
+            review_url="https://gitlab.example.com/group/project/-/merge_requests/8",
+            workspace_dir="/tmp/review-8/repo",
+            repo_url="https://gitlab.example.com/group/project.git",
+            source_branch="feature/review-page",
+            target_branch="main",
+        )
+
+        self.assertEqual(
+            command.argv,
+            [
+                "demo",
+                "review",
+                "--repo",
+                "https://gitlab.example.com/group/project.git",
+                "--source",
+                "feature/review-page",
+                "--target",
+                "main",
+                "/tmp/review-8/repo",
+            ],
+        )
+
     def test_refresh_model_catalog_uses_configured_shell(self):
         ctx = _FakeCtx(
             command_shell_config={

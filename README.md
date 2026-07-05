@@ -180,11 +180,44 @@ agents:
 
 补充说明：
 
-- `review_command` 支持占位符：`{model}`、`{review_url}`、`{workspace_dir}`
+- `review_command` 支持占位符：`{model}`、`{review_url}`、`{workspace_dir}`、`{repo_url}`、`{source_branch}`、`{target_branch}`
 - `list_models_command` 的输出按“每行一个模型 ID”解析
 - 空行会忽略
 - 以 `Available models` 开头的标题行会忽略
 - 每行前缀的 `-` 或 `*` 会被剥掉再入库
+
+### Claude Code Agent 示例
+
+仓库内提供了 `scripts/claude_review.py`，用于把 Claude Code 的 `stream-json` 输出转换成实时日志，并保证 Claude 在本地缓存仓库目录中执行。
+
+示例配置：
+
+```yaml
+agents:
+  claude_code:
+    list_models_command: python /path/to/ReviewPage/scripts/claude_review.py --list-models
+    review_command: >-
+      python /path/to/ReviewPage/scripts/claude_review.py
+      --model "{model}"
+      --review-url "{review_url}"
+      --workspace-dir "{workspace_dir}"
+      --repo-url "{repo_url}"
+      --source-branch "{source_branch}"
+      --target-branch "{target_branch}"
+    models:
+    - sonnet
+    - opus
+    - fable
+    default_model: sonnet
+```
+
+`scripts/claude_review.py` 默认会调用：
+
+```bash
+claude -p --output-format stream-json --include-partial-messages
+```
+
+如果本机 `claude` 不在 `PATH` 中，可通过 `CLAUDE_BIN` 指定；如果想调整模型列表，可通过 `CLAUDE_REVIEW_MODELS` 指定逗号或换行分隔的模型名。
 
 ### 平台配置
 

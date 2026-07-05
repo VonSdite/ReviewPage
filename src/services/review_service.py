@@ -474,6 +474,9 @@ class ReviewService:
                 model=str(row["model_id"]),
                 review_url=target.review_url,
                 workspace_dir=str(repo_dir),
+                repo_url=target.repo_url,
+                source_branch=target.source_branch,
+                target_branch=target.target_branch or "",
             )
 
             self._review_repository.update_execution_context(
@@ -496,6 +499,7 @@ class ReviewService:
             self._prepare_cached_repository(
                 repo_url=target.repo_url,
                 source_branch=target.source_branch,
+                target_branch=target.target_branch,
                 repo_dir=repo_dir,
                 append_log=append_log,
                 cancel_event=cancel_event,
@@ -552,6 +556,7 @@ class ReviewService:
         *,
         repo_url: str,
         source_branch: str,
+        target_branch: str | None,
         repo_dir: Path,
         append_log: Callable[[str], None],
         cancel_event: threading.Event,
@@ -596,6 +601,20 @@ class ReviewService:
             cancel_event=cancel_event,
             failure_message="git fetch 失败",
         )
+        if target_branch:
+            self._run_required_command(
+                [
+                    "git",
+                    "fetch",
+                    "--prune",
+                    "origin",
+                    f"+refs/heads/{target_branch}:refs/remotes/origin/{target_branch}",
+                ],
+                cwd=repo_dir,
+                append_log=append_log,
+                cancel_event=cancel_event,
+                failure_message="git fetch 目标分支失败",
+            )
         self._run_required_command(
             ["git", "reset", "--hard"],
             cwd=repo_dir,

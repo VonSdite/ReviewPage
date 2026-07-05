@@ -2611,6 +2611,7 @@
                 return String(record.id) === String(state.openDetailId);
             }) || null;
             syncOpenDetailSummary(listRecord);
+            await loadDetail(state.openDetailId, true);
             syncReviewCancelPopover();
             syncReviewDeletePopover();
         }
