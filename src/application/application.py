@@ -130,7 +130,7 @@ class Application:
             from gevent.pywsgi import WSGIServer
         except ImportError:
             self._logger.warning("gevent not installed, fallback to Flask development server")
-            self._flask_app.run(host=host, port=port, debug=False)
+            self._flask_app.run(host=host, port=port, debug=False, threaded=True)
             return
 
         self._logger.info("Starting Review Page on %s:%s", host, port)

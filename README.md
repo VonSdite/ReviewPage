@@ -19,7 +19,8 @@
 - 后台执行
   - 单线程串行消费待执行任务
   - 启动时会把“pending + running”的遗留任务重置回队列
-  - 克隆 MR 源分支代码后，在临时工作目录中执行 Agent 检视命令
+  - 复用本地仓库缓存，切换并更新 MR 源分支后执行 Agent 检视命令
+  - 如果本机安装了 `codegraph`，会在检视前自动初始化或同步代码索引
 - 配置驱动
   - Agent、平台、默认项都持久化在 `config.yaml`
   - Review 记录和日志存储在 SQLite
@@ -30,9 +31,11 @@
 2. 后端把任务写入 SQLite 队列，状态为 `pending/queued`。
 3. 后台 worker 轮询队列，依次领取任务并标记为 `pending/running`。
 4. Hub 解析 MR 地址，获取仓库地址、源分支、目标分支、标题、作者等信息。
-5. 服务端执行 `git clone --depth 1 --branch <source_branch>` 拉取代码。
-6. Agent 根据 `review_command` 生成实际命令，在仓库目录中执行检视。
-7. 结果和日志写回数据库，任务最终变为 `completed/finished` 或 `failed/finished`。
+5. 服务端在 `workspace.temp_root/repos` 中查找仓库缓存；没有缓存则 `git clone`，已有缓存则 `git fetch`。
+6. 服务端清理工作区改动，切换到 MR 源分支并执行 `git pull --ff-only`。
+7. 如果本机安装了 `codegraph`，首次检视会执行 `codegraph init -i`，后续检视会执行 `codegraph sync`。
+8. Agent 根据 `review_command` 生成实际命令，在缓存仓库目录中执行检视。
+9. 结果和日志写回数据库，任务最终变为 `completed/finished`、`failed/finished` 或 `cancelled/finished`。
 
 ## 快速开始
 
@@ -41,6 +44,7 @@
 - Python
 - `git`
 - 可用的 Agent CLI
+- 可选：`codegraph` CLI，用于在检视前准备本地代码索引
 - Python 包：`flask`、`gevent`、`requests`、`pyyaml`
 
 安装示例：
@@ -108,7 +112,7 @@ http://127.0.0.1:31944
 | `database.path` | SQLite 数据目录，不是 sqlite 文件路径；实际数据库文件固定为 `<database.path>/review_page.sqlite3` |
 | `logging.path` | 日志目录 |
 | `logging.level` | 日志级别，缺省 `INFO` |
-| `workspace.temp_root` | 任务执行时的临时工作目录根路径 |
+| `workspace.temp_root` | 任务执行时的仓库缓存根路径；缓存仓库会放在其 `repos` 子目录下 |
 | `queue.poll_interval_seconds` | 队列轮询间隔，最小会按 `0.5` 秒处理 |
 | `command_shell` | 全局 Agent 命令执行 shell，可写字符串或映射 |
 | `hubs.default` | 显式默认平台，可为空 |

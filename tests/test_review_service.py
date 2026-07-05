@@ -286,6 +286,7 @@ class ReviewServiceTestCase(unittest.TestCase):
             patch("src.services.review_service.build_config_driven_agents", side_effect=_build_fake_agents),
             patch("src.services.review_service.build_configured_hubs", side_effect=_build_fake_hubs),
             patch("src.services.review_service.get_registered_hub_types", return_value=["gitlab"]),
+            patch("src.services.review_service.shutil.which", return_value=None),
         ]
         for patcher in patchers:
             patcher.start()
@@ -468,7 +469,6 @@ class ReviewServiceTestCase(unittest.TestCase):
 
             review_id = int(created["id"])
             review_started = threading.Event()
-            cleanup_errors = []
             delete_errors = []
             delete_result = {}
 
@@ -489,19 +489,6 @@ class ReviewServiceTestCase(unittest.TestCase):
                     time.sleep(0.05)
                 raise AssertionError("cancel_requested was never observed")
 
-            original_cleanup_workspace = service._cleanup_workspace
-
-            def wrapped_cleanup_workspace(workspace_dir, temp_root, append_log):
-                try:
-                    if service.get_review_detail(review_id) is None:
-                        raise AssertionError("review was deleted before cleanup started")
-                    time.sleep(0.2)
-                    if service.get_review_detail(review_id) is None:
-                        raise AssertionError("review was deleted during cleanup")
-                except Exception as exc:  # pragma: no cover - assertion path
-                    cleanup_errors.append(exc)
-                original_cleanup_workspace(workspace_dir, temp_root, append_log)
-
             def run_delete_review():
                 try:
                     delete_result.update(service.delete_review(review_id))
@@ -509,18 +496,15 @@ class ReviewServiceTestCase(unittest.TestCase):
                     delete_errors.append(exc)
 
             with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
-                with patch.object(service, "_cleanup_workspace", side_effect=wrapped_cleanup_workspace):
-                    worker = threading.Thread(target=service.execute_next_review, daemon=True)
-                    worker.start()
-                    self.assertTrue(review_started.wait(timeout=1))
+                worker = threading.Thread(target=service.execute_next_review, daemon=True)
+                worker.start()
+                self.assertTrue(review_started.wait(timeout=1))
 
-                    delete_thread = threading.Thread(target=run_delete_review, daemon=True)
-                    delete_thread.start()
-                    delete_thread.join(timeout=3)
-                    worker.join(timeout=3)
+                delete_thread = threading.Thread(target=run_delete_review, daemon=True)
+                delete_thread.start()
+                delete_thread.join(timeout=3)
+                worker.join(timeout=3)
 
-            if cleanup_errors:
-                raise cleanup_errors[0]
             if delete_errors:
                 raise delete_errors[0]
 
@@ -538,10 +522,12 @@ class ReviewServiceTestCase(unittest.TestCase):
         )
         self.assertIsNone(detail)
 
-    def test_execute_review_always_deletes_workspace_on_failure(self):
+    def test_execute_review_clones_repository_into_cache_and_keeps_it_on_failure(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir) / "workspaces"
             service, _ctx = self.create_service(str(temp_root))
+            repo_url = "https://gitlab.example.com/group/project.git"
+            repo_dir = service._build_repo_cache_dir(temp_root, repo_url)
 
             service.create_review(
                 {
@@ -557,23 +543,30 @@ class ReviewServiceTestCase(unittest.TestCase):
                     self.returncode = returncode
                     self.output = output
 
-            with patch("src.services.review_service.stream_command") as mocked_stream_command:
-                mocked_stream_command.side_effect = [
-                    _FakeResult(0, "clone ok"),
-                    _FakeResult(1, "review failed"),
-                ]
+            commands = []
+
+            def fake_stream_command(argv, cwd, env=None, on_output=None, cancel_requested=None):
+                commands.append(list(argv))
+                if argv and argv[0] == "git":
+                    if len(argv) > 1 and argv[1] == "clone":
+                        (Path(argv[-1]) / ".git").mkdir(parents=True)
+                    return _FakeResult(0, "git ok")
+                return _FakeResult(1, "review failed")
+
+            with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
                 handled = service.execute_next_review()
 
-        self.assertTrue(handled)
-        self.assertFalse(temp_root.exists())
+            self.assertTrue(handled)
+            self.assertTrue(repo_dir.exists())
+            self.assertIn(["git", "clone", repo_url, str(repo_dir)], commands)
 
-    def test_execute_review_keeps_temp_root_when_other_workspaces_exist(self):
+    def test_execute_review_reuses_cached_repository_and_updates_branch(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir) / "workspaces"
-            temp_root.mkdir(parents=True)
-            sibling_workspace = temp_root / "review-keep-me"
-            sibling_workspace.mkdir()
             service, _ctx = self.create_service(str(temp_root))
+            repo_url = "https://gitlab.example.com/group/project.git"
+            repo_dir = service._build_repo_cache_dir(temp_root, repo_url)
+            (repo_dir / ".git").mkdir(parents=True)
 
             service.create_review(
                 {
@@ -589,21 +582,41 @@ class ReviewServiceTestCase(unittest.TestCase):
                     self.returncode = returncode
                     self.output = output
 
-            with patch("src.services.review_service.stream_command") as mocked_stream_command:
-                mocked_stream_command.side_effect = [
-                    _FakeResult(0, "clone ok"),
-                    _FakeResult(1, "review failed"),
-                ]
+            commands = []
+            command_cwds = []
+
+            def fake_stream_command(argv, cwd, env=None, on_output=None, cancel_requested=None):
+                commands.append(list(argv))
+                command_cwds.append(Path(cwd))
+                return _FakeResult(0, "ok")
+
+            with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
                 handled = service.execute_next_review()
 
             self.assertTrue(handled)
-            self.assertTrue(temp_root.exists())
-            self.assertTrue(sibling_workspace.exists())
+            self.assertNotIn(["git", "clone", repo_url, str(repo_dir)], commands)
+            self.assertIn(["git", "remote", "set-url", "origin", repo_url], commands)
+            self.assertIn(
+                [
+                    "git",
+                    "fetch",
+                    "--prune",
+                    "origin",
+                    "+refs/heads/feature/review-page:refs/remotes/origin/feature/review-page",
+                ],
+                commands,
+            )
+            self.assertIn(["git", "checkout", "-B", "feature/review-page", "origin/feature/review-page"], commands)
+            self.assertIn(["git", "pull", "--ff-only", "origin", "feature/review-page"], commands)
+            self.assertEqual(command_cwds[-1], repo_dir)
 
-    def test_execute_review_prunes_empty_directories_left_by_partial_cleanup(self):
+    def test_execute_review_initializes_codegraph_when_tool_exists_and_index_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_root = Path(tmpdir) / "workspaces"
             service, _ctx = self.create_service(str(temp_root))
+            repo_url = "https://gitlab.example.com/group/project.git"
+            repo_dir = service._build_repo_cache_dir(temp_root, repo_url)
+            (repo_dir / ".git").mkdir(parents=True)
 
             service.create_review(
                 {
@@ -619,22 +632,55 @@ class ReviewServiceTestCase(unittest.TestCase):
                     self.returncode = returncode
                     self.output = output
 
-            def partial_rmtree(path, *args, **kwargs):
-                workspace_path = Path(path)
-                for child in sorted(workspace_path.rglob("*"), key=lambda item: len(item.parts), reverse=True):
-                    if child.is_file():
-                        child.unlink()
+            commands = []
 
-            with patch("src.services.review_service.stream_command") as mocked_stream_command:
-                mocked_stream_command.side_effect = [
-                    _FakeResult(0, "clone ok"),
-                    _FakeResult(1, "review failed"),
-                ]
-                with patch("src.services.review_service.shutil.rmtree", side_effect=partial_rmtree):
+            def fake_stream_command(argv, cwd, env=None, on_output=None, cancel_requested=None):
+                commands.append(list(argv))
+                return _FakeResult(0, "ok")
+
+            with patch("src.services.review_service.shutil.which", return_value="/usr/bin/codegraph"):
+                with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
                     handled = service.execute_next_review()
 
         self.assertTrue(handled)
-        self.assertFalse(temp_root.exists())
+        self.assertIn(["git", "clean", "-fd", "-e", ".codegraph/"], commands)
+        self.assertIn(["codegraph", "init", "-i"], commands)
+
+    def test_execute_review_syncs_codegraph_when_index_exists(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_root = Path(tmpdir) / "workspaces"
+            service, _ctx = self.create_service(str(temp_root))
+            repo_url = "https://gitlab.example.com/group/project.git"
+            repo_dir = service._build_repo_cache_dir(temp_root, repo_url)
+            (repo_dir / ".git").mkdir(parents=True)
+            (repo_dir / ".codegraph").mkdir()
+
+            service.create_review(
+                {
+                    "mr_url": "https://gitlab.example.com/group/project/-/merge_requests/13-sync",
+                    "hub_id": "gitlab",
+                    "agent_id": "opencode",
+                    "model_id": "provider/model-a",
+                }
+            )
+
+            class _FakeResult:
+                def __init__(self, returncode, output):
+                    self.returncode = returncode
+                    self.output = output
+
+            commands = []
+
+            def fake_stream_command(argv, cwd, env=None, on_output=None, cancel_requested=None):
+                commands.append(list(argv))
+                return _FakeResult(0, "ok")
+
+            with patch("src.services.review_service.shutil.which", return_value="/usr/bin/codegraph"):
+                with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
+                    handled = service.execute_next_review()
+
+        self.assertTrue(handled)
+        self.assertIn(["codegraph", "sync"], commands)
 
     def test_execute_review_marks_task_failed_when_opencode_output_contains_error_marker(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -654,20 +700,25 @@ class ReviewServiceTestCase(unittest.TestCase):
                     self.returncode = returncode
                     self.output = output
 
-            with patch("src.services.review_service.stream_command") as mocked_stream_command:
-                mocked_stream_command.side_effect = [
-                    _FakeResult(0, "clone ok"),
-                    _FakeResult(
-                        0,
-                        '\n'.join(
-                            [
-                                '"instruction": "If your new comment adds value, retry with --force."}',
-                                'Error: AI_TypeValidationError: Type validation failed: Value: {"text":"[DONE]","error":{"error_msg":"Too many requests, the rate limit is 8000000 tokens per minute.","error_code":"InferHub.ModelArts.81101.429"},"error_code":"InferHub.ModelArts.81101.429","error_msg":"Too many requests, the rate limit is 8000000 tokens per minute."}.',
-                                'Error message: [{"code":"invalid_union","errors":[[{"expected":"array","code":"invalid_type","path":["choices"],"message":"Invalid input: expected array, received undefined"}],[{"expected":"string","code":"invalid_type","path":["error","message"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]',
-                            ]
-                        ),
-                    ),
-                ]
+            review_result = _FakeResult(
+                0,
+                '\n'.join(
+                    [
+                        '"instruction": "If your new comment adds value, retry with --force."}',
+                        'Error: AI_TypeValidationError: Type validation failed: Value: {"text":"[DONE]","error":{"error_msg":"Too many requests, the rate limit is 8000000 tokens per minute.","error_code":"InferHub.ModelArts.81101.429"},"error_code":"InferHub.ModelArts.81101.429","error_msg":"Too many requests, the rate limit is 8000000 tokens per minute."}.',
+                        'Error message: [{"code":"invalid_union","errors":[[{"expected":"array","code":"invalid_type","path":["choices"],"message":"Invalid input: expected array, received undefined"}],[{"expected":"string","code":"invalid_type","path":["error","message"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]',
+                    ]
+                ),
+            )
+
+            def fake_stream_command(argv, cwd, env=None, on_output=None, cancel_requested=None):
+                if argv and argv[0] == "git":
+                    if len(argv) > 1 and argv[1] == "clone":
+                        (Path(argv[-1]) / ".git").mkdir(parents=True)
+                    return _FakeResult(0, "git ok")
+                return review_result
+
+            with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
                 handled = service.execute_next_review()
 
             detail = service.get_review_detail(int(created["id"]))
@@ -699,11 +750,14 @@ class ReviewServiceTestCase(unittest.TestCase):
                     self.returncode = returncode
                     self.output = output
 
-            with patch("src.services.review_service.stream_command") as mocked_stream_command:
-                mocked_stream_command.side_effect = [
-                    _FakeResult(0, "clone ok"),
-                    _FakeResult(0, "Issue 1: improve error handling in retry logic"),
-                ]
+            def fake_stream_command(argv, cwd, env=None, on_output=None, cancel_requested=None):
+                if argv and argv[0] == "git":
+                    if len(argv) > 1 and argv[1] == "clone":
+                        (Path(argv[-1]) / ".git").mkdir(parents=True)
+                    return _FakeResult(0, "git ok")
+                return _FakeResult(0, "Issue 1: improve error handling in retry logic")
+
+            with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
                 handled = service.execute_next_review()
 
             detail = service.get_review_detail(int(created["id"]))
@@ -734,20 +788,25 @@ class ReviewServiceTestCase(unittest.TestCase):
                     self.returncode = returncode
                     self.output = output
 
-            with patch("src.services.review_service.stream_command") as mocked_stream_command:
-                mocked_stream_command.side_effect = [
-                    _FakeResult(0, "clone ok"),
-                    _FakeResult(
-                        0,
-                        "\n".join(
-                            [
-                                "Review note: this path can surface the following traceback to users",
-                                "Traceback (most recent call last):",
-                                "ValueError: invalid payload",
-                            ]
-                        ),
-                    ),
-                ]
+            review_result = _FakeResult(
+                0,
+                "\n".join(
+                    [
+                        "Review note: this path can surface the following traceback to users",
+                        "Traceback (most recent call last):",
+                        "ValueError: invalid payload",
+                    ]
+                ),
+            )
+
+            def fake_stream_command(argv, cwd, env=None, on_output=None, cancel_requested=None):
+                if argv and argv[0] == "git":
+                    if len(argv) > 1 and argv[1] == "clone":
+                        (Path(argv[-1]) / ".git").mkdir(parents=True)
+                    return _FakeResult(0, "git ok")
+                return review_result
+
+            with patch("src.services.review_service.stream_command", side_effect=fake_stream_command):
                 handled = service.execute_next_review()
 
             detail = service.get_review_detail(int(created["id"]))

@@ -5,11 +5,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import os
 import re
 import shutil
 import stat
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -20,7 +20,7 @@ from ..application.app_context import AppContext
 from ..domain import ReviewAgent, ReviewHub, get_registered_hub_types
 from ..integrations import build_config_driven_agents, build_configured_hubs
 from ..integrations.agents import ConfigDrivenReviewAgent
-from ..utils import CommandCancelledError, format_command, stream_command
+from ..utils import CommandCancelledError, CommandRunResult, format_command, stream_command
 
 
 _AGENT_OUTPUT_FAILURE_PATTERNS = (
@@ -451,10 +451,8 @@ class ReviewService:
         review_id = int(row["id"])
         hub = self._hubs[str(row["hub_id"])]
         agent = self._agents[str(row["agent_id"])]
-        temp_root = Path(self._config_manager.get_workspace_temp_root())
-        temp_root.mkdir(parents=True, exist_ok=True)
-        workspace_dir = Path(tempfile.mkdtemp(prefix=f"review-{review_id}-", dir=str(temp_root)))
-        repo_dir = workspace_dir / "repo"
+        cache_root = Path(self._config_manager.get_workspace_temp_root())
+        cache_root.mkdir(parents=True, exist_ok=True)
         cancel_event = self._activate_review(review_id)
 
         log_sequence = int(row.get("last_log_seq") or 0)
@@ -471,6 +469,7 @@ class ReviewService:
             self._raise_if_cancel_requested(cancel_event)
             append_log("[system] 开始解析检视地址")
             target = hub.resolve_review_target(str(row["mr_url"]))
+            repo_dir = self._build_repo_cache_dir(cache_root, target.repo_url)
             command_spec = agent.build_review_command(
                 model=str(row["model_id"]),
                 review_url=target.review_url,
@@ -488,34 +487,20 @@ class ReviewService:
                 author_name=target.author_name,
             )
 
-            append_log(f"[system] 临时目录：{workspace_dir}")
+            append_log(f"[system] 仓库缓存目录：{repo_dir}")
             append_log(f"[system] 代码仓库：{target.repo_url}")
             append_log(f"[system] 检视分支：{target.source_branch}")
             if target.target_branch:
                 append_log(f"[system] 目标分支：{target.target_branch}")
 
-            clone_command = [
-                "git",
-                "clone",
-                "--depth",
-                "1",
-                "--branch",
-                target.source_branch,
-                "--single-branch",
-                target.repo_url,
-                str(repo_dir),
-            ]
-            self._raise_if_cancel_requested(cancel_event)
-            append_log(f"[command] {format_command(clone_command)}")
-            clone_result = stream_command(
-                clone_command,
-                cwd=workspace_dir,
-                on_output=append_log,
-                cancel_requested=cancel_event.is_set,
+            self._prepare_cached_repository(
+                repo_url=target.repo_url,
+                source_branch=target.source_branch,
+                repo_dir=repo_dir,
+                append_log=append_log,
+                cancel_event=cancel_event,
             )
-            if clone_result.returncode != 0:
-                review_output = clone_result.output.strip()
-                raise RuntimeError(f"git clone 失败，退出码 {clone_result.returncode}")
+            self._prepare_codegraph_index(repo_dir, append_log, cancel_event)
 
             self._raise_if_cancel_requested(cancel_event)
             append_log(f"[command] {format_command(command_spec.argv)}")
@@ -551,28 +536,141 @@ class ReviewService:
             append_log(f"[system] 检视失败：{message}")
             self._review_repository.mark_review_failed(review_id, review_output, message)
         finally:
-            try:
-                self._cleanup_workspace(workspace_dir, temp_root, append_log)
-            finally:
-                self._clear_active_review(review_id)
+            self._clear_active_review(review_id)
 
-    def _cleanup_workspace(
+    @staticmethod
+    def _build_repo_cache_dir(cache_root: Path, repo_url: str) -> Path:
+        repo_name = str(repo_url or "").rstrip("/").rsplit("/", 1)[-1].strip()
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+        repo_slug = re.sub(r"[^A-Za-z0-9._-]+", "-", repo_name).strip(".-") or "repository"
+        repo_hash = hashlib.sha256(str(repo_url or "").encode("utf-8")).hexdigest()[:12]
+        return cache_root / "repos" / f"{repo_slug}-{repo_hash}"
+
+    def _prepare_cached_repository(
         self,
-        workspace_dir: Path,
-        temp_root: Path,
+        *,
+        repo_url: str,
+        source_branch: str,
+        repo_dir: Path,
         append_log: Callable[[str], None],
+        cancel_event: threading.Event,
     ) -> None:
-        if self._remove_directory_tree(workspace_dir):
-            append_log(f"[system] 临时目录已清理：{workspace_dir}")
-        else:
-            append_log(f"[system] 临时目录清理失败，仍有残留：{workspace_dir}")
+        repo_dir.parent.mkdir(parents=True, exist_ok=True)
+        git_dir = repo_dir / ".git"
 
-        try:
-            temp_root.rmdir()
-        except OSError:
+        if not git_dir.exists():
+            if repo_dir.exists():
+                append_log(f"[system] 仓库缓存不完整，重新创建：{repo_dir}")
+                if not self._remove_directory_tree(repo_dir):
+                    raise RuntimeError(f"仓库缓存目录清理失败：{repo_dir}")
+
+            append_log("[system] 缓存未命中，开始克隆仓库")
+            self._run_required_command(
+                ["git", "clone", repo_url, str(repo_dir)],
+                cwd=repo_dir.parent,
+                append_log=append_log,
+                cancel_event=cancel_event,
+                failure_message="git clone 失败",
+            )
+        else:
+            append_log("[system] 命中仓库缓存，更新远端信息")
+            self._run_required_command(
+                ["git", "remote", "set-url", "origin", repo_url],
+                cwd=repo_dir,
+                append_log=append_log,
+                cancel_event=cancel_event,
+                failure_message="git remote set-url 失败",
+            )
+
+        self._run_required_command(
+            [
+                "git",
+                "fetch",
+                "--prune",
+                "origin",
+                f"+refs/heads/{source_branch}:refs/remotes/origin/{source_branch}",
+            ],
+            cwd=repo_dir,
+            append_log=append_log,
+            cancel_event=cancel_event,
+            failure_message="git fetch 失败",
+        )
+        self._run_required_command(
+            ["git", "reset", "--hard"],
+            cwd=repo_dir,
+            append_log=append_log,
+            cancel_event=cancel_event,
+            failure_message="git reset 失败",
+        )
+        self._run_required_command(
+            ["git", "clean", "-fd", "-e", ".codegraph/"],
+            cwd=repo_dir,
+            append_log=append_log,
+            cancel_event=cancel_event,
+            failure_message="git clean 失败",
+        )
+        self._run_required_command(
+            ["git", "checkout", "-B", source_branch, f"origin/{source_branch}"],
+            cwd=repo_dir,
+            append_log=append_log,
+            cancel_event=cancel_event,
+            failure_message="git checkout 失败",
+        )
+        self._run_required_command(
+            ["git", "pull", "--ff-only", "origin", source_branch],
+            cwd=repo_dir,
+            append_log=append_log,
+            cancel_event=cancel_event,
+            failure_message="git pull 失败",
+        )
+
+    def _prepare_codegraph_index(
+        self,
+        repo_dir: Path,
+        append_log: Callable[[str], None],
+        cancel_event: threading.Event,
+    ) -> None:
+        if not shutil.which("codegraph"):
+            append_log("[system] 未检测到 codegraph，跳过索引准备")
             return
 
-        append_log(f"[system] 临时根目录已清理：{temp_root}")
+        index_exists = (repo_dir / ".codegraph").exists()
+        command = ["codegraph", "sync"] if index_exists else ["codegraph", "init", "-i"]
+        action = "更新" if index_exists else "创建"
+        append_log(f"[system] 检测到 codegraph，{action}代码索引")
+
+        self._raise_if_cancel_requested(cancel_event)
+        append_log(f"[command] {format_command(command)}")
+        result = stream_command(
+            command,
+            cwd=repo_dir,
+            on_output=append_log,
+            cancel_requested=cancel_event.is_set,
+        )
+        if result.returncode != 0:
+            append_log(f"[system] codegraph 索引{action}失败，继续执行检视（退出码 {result.returncode}）")
+
+    def _run_required_command(
+        self,
+        argv: list[str],
+        *,
+        cwd: Path,
+        append_log: Callable[[str], None],
+        cancel_event: threading.Event,
+        failure_message: str,
+    ) -> CommandRunResult:
+        self._raise_if_cancel_requested(cancel_event)
+        append_log(f"[command] {format_command(argv)}")
+        result = stream_command(
+            argv,
+            cwd=cwd,
+            on_output=append_log,
+            cancel_requested=cancel_event.is_set,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"{failure_message}，退出码 {result.returncode}")
+        return result
 
     def _remove_directory_tree(
         self,
